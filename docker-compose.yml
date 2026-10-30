@@ -1,0 +1,96 @@
+name: agropulse
+
+services:
+  mongo:
+    image: mongo:7
+    command: ["--replSet", "rs0", "--bind_ip_all"]
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  mongo-init:
+    image: mongo:7
+    depends_on:
+      mongo:
+        condition: service_healthy
+    volumes:
+      - ./infra/mongo:/scripts:ro
+    entrypoint:
+      - sh
+      - -c
+      - >
+        mongosh --host mongo --quiet --file /scripts/01-replica-set.js &&
+        mongosh "mongodb://mongo:27017/agropulse?replicaSet=rs0" --quiet --file /scripts/02-schema.js
+    restart: "no"
+
+  api:
+    build: ./apps/api
+    environment:
+      MONGO_URI: mongodb://mongo:27017/?replicaSet=rs0
+      MONGO_DB: agropulse
+      JWT_SECRET: ${JWT_SECRET:-troque-esta-chave}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
+    depends_on:
+      mongo-init:
+        condition: service_completed_successfully
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+
+  web:
+    build:
+      context: ./apps/web
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+    environment:
+      API_INTERNAL_URL: http://api:8000
+    depends_on:
+      - api
+    ports:
+      - "3000:3000"
+    restart: unless-stopped
+
+  simulator:
+    build: ./apps/workers
+    command: ["python", "-m", "workers.simulator", "--backfill-days", "7", "--live"]
+    environment:
+      MONGO_URI: mongodb://mongo:27017/?replicaSet=rs0
+      MONGO_DB: agropulse
+      SIM_INTERVAL_SECONDS: ${SIM_INTERVAL_SECONDS:-10}
+    depends_on:
+      mongo-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  alerts:
+    build: ./apps/workers
+    command: ["python", "-m", "workers.alerts"]
+    environment:
+      MONGO_URI: mongodb://mongo:27017/?replicaSet=rs0
+      MONGO_DB: agropulse
+      ALERT_WEBHOOK_URL: ${ALERT_WEBHOOK_URL:-}
+      ALERT_EVAL_SECONDS: ${ALERT_EVAL_SECONDS:-30}
+    depends_on:
+      mongo-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  n8n:
+    image: n8nio/n8n:latest
+    profiles: ["automation"]
+    ports:
+      - "5678:5678"
+    volumes:
+      - n8n_data:/home/node/.n8n
+    restart: unless-stopped
+
+volumes:
+  mongo_data:
+  n8n_data:
