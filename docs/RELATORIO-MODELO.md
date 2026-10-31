@@ -11,7 +11,8 @@
 | Projeto | AgroPulse — plataforma de monitoramento de safra |
 | Professor(a) | [preencher] |
 | Integrantes | Vitor Studzieski (RA pendente), Maria Fernanda Passos (RA pendente) e Lauan Alves Ferneda (RA pendente) |
-| Repositório | https://github.com/Vitor-Studzieski/AgroPulse |
+| Repositório (branch de entrega) | [AgroPulse — feature/agropulse-completion](https://github.com/Vitor-Studzieski/AgroPulse/tree/feature/agropulse-completion) |
+| Pull request para revisão | [PR #1](https://github.com/Vitor-Studzieski/AgroPulse/pull/1) — aberto, sem merge |
 | Data da apresentação | [pendente] |
 
 ## Resumo
