@@ -203,7 +203,7 @@ Use os nomes previstos pelo guia e marque o estado após incluir cada arquivo em
 | 20 | `20-agregacao-media-diaria.png` | [ ] |
 | 21 | `21-compass-colecoes.png` | [x] |
 | 22 | `22-documento-fields.png` | [x] |
-| 23 | `23-documento-sensor-reading.png` | [ ] |
+| 23 | `23-documento-sensor-reading.png` | [x] |
 | 24 | `24-indices-fields.png` | [ ] |
 | 25 | `25-validacao-farms.png` | [ ] |
 | 26 | `26-field-daily-stats.png` | [ ] |
