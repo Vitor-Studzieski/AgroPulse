@@ -125,19 +125,13 @@ export type ProductionRankingRow = {
   planted_area_ha: number;
 };
 export type AlertRule = {
-  id?: string;
-  _id?: string;
+  id: string;
   field_id: string;
-  metric: string;
-  operator?: string;
-  threshold?: number;
-  window_minutes?: number;
-  active?: boolean;
-  enabled?: boolean;
-  name?: string;
-  condition?: string;
-  value?: number;
-  created_at?: string;
+  metric: "soil_moisture" | "soil_temp" | "air_temp" | "rainfall_mm";
+  operator: "lt" | "gt";
+  threshold: number;
+  window_minutes: number;
+  active: boolean;
 };
 export type Alert = {
   id?: string;
