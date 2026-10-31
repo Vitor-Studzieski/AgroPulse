@@ -16,6 +16,10 @@ O AgroPulse reúne cadastro rural, telemetria, alertas e contexto climático e p
 4. Confirme que o painel mostra uma fazenda, três talhões, leituras de sensores, ranking PAM/SIDRA e o ano climático importado mais recente. No conjunto versionado, o ano disponível é 2024.
 5. Deixe aberto o README, o Swagger e [as consultas MongoDB para o relatório](MODELO-DADOS.md). Não execute `make reset` durante a preparação: esse comando apaga os volumes locais.
 
+## Vídeo curto de contingência
+
+O [vídeo de demonstração](apresentacao/demonstracao-agropulse.mp4) está pronto para uso offline. É um clipe silencioso de 26,8 segundos, 1080p, montado com capturas da interface local aberta no Chrome: visão geral, talhões, sensores, regras de alerta e painéis do INMET e da PAM/SIDRA. Os quadros não mostram credenciais. O clipe serve como contingência visual; a apresentação principal continua sendo a demonstração interativa da stack local.
+
 ## Divisão de falas em 12 minutos
 
 Divisão sugerida para o ensaio, alinhada às frentes de trabalho descritas em [PLANO.md](PLANO.md). O grupo pode ajustar os tempos e as falas entre si.
