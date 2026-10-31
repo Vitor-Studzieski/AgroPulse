@@ -1,5 +1,12 @@
 const database = db.getSiblingDB("agropulse");
 const DAY = 60 * 60 * 24;
+const readingsTtlDays = typeof READINGS_TTL_DAYS === "undefined"
+  ? 180
+  : Number(READINGS_TTL_DAYS);
+
+if (!Number.isInteger(readingsTtlDays) || readingsTtlDays < 1) {
+  throw new Error("READINGS_TTL_DAYS precisa ser um inteiro positivo");
+}
 
 const position = {
   bsonType: "array",
@@ -152,12 +159,18 @@ ensureCollection("alerts", validated({
     status: { enum: ["open", "resolved"] },
     triggered_at: { bsonType: "date" },
     resolved_at: { bsonType: "date" },
+    notified_at: { bsonType: "date" },
+    notification_claimed_at: { bsonType: "date" },
   },
 }));
 
 ensureCollection("sensor_readings", {
   timeseries: { timeField: "ts", metaField: "meta", granularity: "minutes" },
-  expireAfterSeconds: 180 * DAY,
+  expireAfterSeconds: readingsTtlDays * DAY,
+});
+database.runCommand({
+  collMod: "sensor_readings",
+  expireAfterSeconds: readingsTtlDays * DAY,
 });
 
 ensureCollection("weather_hourly", {

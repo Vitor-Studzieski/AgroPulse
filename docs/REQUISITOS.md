@@ -1,0 +1,70 @@
+# Matriz de requisitos e evidências
+
+Esta matriz converte os requisitos do guia de engenharia (seções 2–14) em evidências no repositório. “Implementado” descreve o código e os manifests; não significa que houve publicação em nuvem ou entrega acadêmica.
+
+## Requisitos funcionais
+
+| ID | Requisito do guia | Implementação | Evidência / observação |
+|---|---|---|---|
+| RF01 | Cadastro, login e sessão JWT | API e tela de autenticação | `apps/api/app/routers/auth.py`; `apps/api/tests/test_auth_api.py`; interface em `apps/web/app/page.tsx` |
+| RF02 | CRUD de fazendas com localização | Rotas protegidas e interface | `apps/api/app/routers/farms.py`; formulário no painel |
+| RF03 | CRUD de talhões GeoJSON com área e centroide calculados | Validação WGS84, anéis fechados sem cruzamentos, área líquida com anéis internos e centroide ponderado | `apps/api/app/models.py`; `apps/api/app/geo.py`; `apps/api/app/routers/fields.py`; `apps/api/tests/test_geo.py`; `apps/api/tests/test_fields_api.py`; mapa Leaflet. Área calculada por projeção local aproximada para talhões agrícolas. |
+| RF04 | CRUD de safras | Rotas, validações de datas e formulários | `apps/api/app/routers/seasons.py`; `apps/web/components/record-dialogs.tsx` |
+| RF05 | CRUD de operações de plantio, adubação, aplicação, irrigação e colheita | API e diário de campo | `apps/api/app/routers/operations.py`; validação no modelo e schema |
+| RF06 | Leituras recentes e séries horárias/diárias | Simulador, endpoint latest, agregações e atualização do painel a cada 30 s | `apps/workers/workers/simulator.py`; `apps/api/app/routers/readings.py`; `apps/api/app/routers/analytics.py` |
+| RF07 | Regras de alerta e webhook configurável | Avaliação periódica, recuperação de pendências e notificação | `apps/api/app/routers/alert_rules.py`; `apps/workers/workers/alerts.py`; sem URL configurada, usa logs |
+| RF08 | Clima e estações INMET | Importador ZIP anual, estação mais próxima e consulta recente ou por ano-calendário | `apps/workers/workers/inmet.py`; `GET /analytics/fields/{id}/stations` e `/weather`. `make demo` carrega `data/imports/inmet-sp-a763-2024.zip`, amostra oficial somente da A763/Marília (8.784 observações), posicionada a 27,8 km do campus Fatec Pompéia; o painel exibe o ano importado mais recente quando não há observações na janela de sete dias. Também foi validada a importação do ZIP oficial completo de 2024 com filtro SP em MongoDB descartável: 40 estações e 351.360 leituras. A última leitura exibida para A763 foi 31/12/2024 23:00 UTC. Fonte: [Dados históricos do INMET](https://portal.inmet.gov.br/dadoshistoricos/). |
+| RF09 | Ranking municipal IBGE | Importador SIDRA/PAM com filtro por ano/UF/cultura e consulta na API | `apps/workers/workers/ibge.py`; `GET /analytics/production/ranking`; fixture oficial de Sorriso (MT) nos testes; amostra oficial `data/imports/pam-sp-2023.csv` cobre os 645 municípios paulistas para soja, milho e cana no ano-base 2023. A demonstração importou 1.556 registros completos (480 soja, 564 milho e 512 cana), incluindo os três registros de Pompéia, e a API autenticada e o painel exibiram o ranking de soja em SP. |
+| RF10 | Painel, mapa e gráficos | Next.js integrado à API, mapa GeoJSON com Leaflet, séries horárias e diárias com Recharts, clima e ranking | `apps/web/app/page.tsx`; `apps/web/components/leaflet-map.tsx`; `apps/web/components/insights-panels.tsx` |
+
+## Requisitos não funcionais e operação
+
+| Requisito | Evidência | Limite atual |
+|---|---|---|
+| Custo incremental zero e ausência de cartão obrigatório | Compose local; caminho público opcional configurado para tiers gratuitos; instrução para interromper se pedir pagamento | A publicação externa não foi criada nem verificada com contas reais; a execução local é a única opção sob controle do projeto |
+| Segurança básica | bcrypt, JWT, autorização por proprietário, validação, CORS configurável e segredos fora do Git | Não substitui revisão independente, política de cookies de produção ou teste de invasão |
+| Integridade numérica e geográfica | A API rejeita métricas não finitas; importadores descartam números não finitos e ignoram estações INMET com coordenadas inválidas | Validação de domínio e coordenadas no código; dependente dos testes locais e schema MongoDB |
+| Persistência MongoDB | `infra/mongo/01-replica-set.js`, `02-schema.js` e `03-verify-schema.js`; coleções, time series, índices, validações, TTL e plano `IXSCAN` | A compatibilidade exata dos comandos do schema depende do tier MongoDB usado; o job de CI aplica e verifica em MongoDB 7 limpo. O Atlas Free usa MongoDB 8.0, então o schema hospedado ainda precisa de validação específica antes da publicação. |
+| Reprodutibilidade | `make demo` inicia a stack integrada, aplica o seed idempotente, gera sete dias de telemetria histórica, inicia a simulação ao vivo, importa as amostras oficiais limitadas de INMET/IBGE e executa o rollup inicial; o serviço integrado atualiza os resumos diariamente. Três Compose isolam web, API e workers; o front tem `package-lock.json`; API e workers têm locks Python transitivos, universais para Python 3.12 e com hashes, consumidos por Docker e CI | Exige Docker; consultas às APIs oficiais são necessárias apenas para atualizar as amostras. Atualizar uma dependência exige alterar a versão direta e regenerar os locks com `uv pip compile`. |
+| Recuperação automática | Restart policies Compose; supervisor da imagem Render; preenchimento de lacunas limitado; recuperação de alertas pendentes | Render Free hiberna quando ocioso; não promete 24/7, SLA ou execução contínua dos workers |
+| CI em cada push e PR | `.github/workflows/ci.yml`: lint/teste, sintaxe do gerador PAM, build web, schema, manifests e imagem Render | GitHub Actions passou em `main` no commit `6d69f43` (jobs schema, workers, API, web e Compose); essa execução antecede as alterações locais ainda sem commit deste worktree. O CI atualizado ainda depende de publicação autorizada. |
+| Custo de armazenamento Atlas | TTL de 30 dias no Blueprint, importação limitada e rollup | Atlas Free tem teto de dados + índices; monitorar e reduzir a carga ao aproximar do limite |
+
+## Verificações locais concluídas
+
+- Dependências Python: versões diretas fixadas nos arquivos `requirements.txt`; cinco locks completos gerados para Python 3.12 com hashes. Docker instala os locks runtime e CI instala os locks de desenvolvimento usando `--require-hashes`. Para regenerá-los após uma atualização intencional, com `uv` instalado, execute na raiz:
+
+  ```bash
+  uv pip compile --universal --python-version 3.12 --generate-hashes -o apps/api/requirements.lock apps/api/requirements.txt
+  uv pip compile --universal --python-version 3.12 --generate-hashes -o apps/api/requirements-dev.lock apps/api/requirements-dev.txt
+  uv pip compile --universal --python-version 3.12 --generate-hashes -o apps/workers/requirements.lock apps/workers/requirements.txt
+  uv pip compile --universal --python-version 3.12 --generate-hashes -o apps/workers/requirements-dev.lock apps/workers/requirements-dev.txt
+  uv pip compile --universal --python-version 3.12 --generate-hashes -o requirements-render.lock requirements-render.in
+  ```
+
+- Validação dos locks: `uv pip install --dry-run --offline --require-hashes` conferiu os cinco arquivos contra o ambiente Python 3.12.13 sem alterações; os builds Docker da API, workers e imagem Render também instalaram os locks com hashes com sucesso.
+
+- Ruff e pytest da API: 52 testes aprovados em 2026-10-31, incluindo cálculo e persistência de área/centroide de GeoJSON com anel interno, limpeza de campos opcionais por PATCH, rejeição de `null` em campos obrigatórios, correspondência de nulabilidade no OpenAPI, contrato documentado de `/health`, consulta climática de ano-calendário, campos desconhecidos, métricas não finitas e invariantes de resolução de alertas.
+- Ruff e pytest dos workers: 18 testes aprovados, incluindo parsing da amostra oficial SIDRA/PAM, rejeição de coordenadas WGS84 inválidas e descarte de medições não finitas. Importação adicional conferida em MongoDB temporário: 3 documentos (soja, milho e cana) persistidos e lidos.
+- Schema: `02-schema.js` e `03-verify-schema.js` executados em MongoDB 7 descartável com TTL de 30 dias. As verificações confirmaram as duas coleções time series, TTL, índices únicos/geoespaciais, plano `IXSCAN` via `hint` e rejeição de fazenda inválida sem persistência.
+- A API oficial do SIDRA foi consultada para os 645 municípios de SP, tabela 5457, ano 2023, três culturas e três variáveis de produção. O gerador do repositório repetiu a consulta e produziu CSV idêntico ao versionado (5.805 linhas). O importador filtrou os registros completos para 1.556 documentos. A carga foi conferida no Mongo local (480 soja, 564 milho, 512 cana); Pompéia possui um registro por cultura. Login, endpoint e ranking visível no painel foram confirmados.
+- Reprodução de primeiro uso em projeto Docker isolado, com Mongo vazio e portas próprias: `make demo` criou 1 fazenda, 3 talhões e 6 sensores; gerou 12.096 leituras sintéticas cobrindo sete dias; carregou 8.784 leituras da A763 e 1.556 registros da PAM; e criou 24 resumos diários em `field_daily_stats`. A API autenticada retornou histórico anual 2024 e ranking SP de 2023 com 10 linhas. A execução repetida preservou as contagens, ignorou o backfill já existente e não criou resumos duplicados. Os volumes descartáveis foram removidos ao final; a demonstração principal foi preservada.
+- Importação real do INMET 2024 executada sobre o ZIP oficial completo com `--states SP`, após aplicação de `infra/mongo/02-schema.js` em MongoDB descartável sem volume: 40 documentos de estação e 351.360 observações horárias persistidas. Para uma demonstração compacta reproduzível, o repositório agora contém apenas o CSV oficial da A763 em um ZIP de 212 KiB; `make demo` importa 8.784 observações horárias sem baixar o arquivo anual completo. A API e a interface posicionam a estação a 27,8 km do campus e permitem consultar 2024.
+- Build de produção do Next.js, configuração dos cinco manifests Compose e construção da imagem Render aprovados. Uma cópia integrada e isolada da stack recebeu o seed Fatec e o ZIP INMET; o painel autenticado exibiu os dados de 2024 da A763.
+- Após reconstruir somente o serviço web, o Chrome recarregou a demonstração com a janela recente vazia e selecionou automaticamente `Ano 2024`; o painel exibiu as observações oficiais da A763 até 31/12/2024 às 20:00 no horário local. A captura acadêmica correspondente ainda precisa ser salva pelo grupo.
+- Fluxo integrado exercitado em stack Docker isolada com usuário sintético descartável: cadastro/login/perfil; CRUD de fazenda, talhão, safra, operação, sensor e regra de alerta; leitura emitida pelo simulador; alerta criado e avaliado pelo worker, resolvido e removido; exclusão dos recursos e da conta de teste; token revogado respondeu 401. Os dados do teste foram removidos e o volume da stack de demonstração foi preservado.
+- Workflow GitHub Actions inspecionado: execução remota em `main` terminou com sucesso em 2026-10-30, no commit `6d69f43`, com os jobs `schema`, `workers`, `api`, `web` e `compose` aprovados. O commit é a base do worktree; a execução não contém as alterações locais atuais.
+- Os três Compose isolados iniciaram. Web/Mock API e API isolada responderam 200; API e imagem Render passaram health GET/HEAD e `/docs`. O worker isolado iniciou com 6 sensores, 3 regras e leituras geradas.
+- Os containers de validação foram encerrados com `down` normal; os volumes foram preservados. `git diff --check` passou.
+
+## Evidências acadêmicas pendentes do grupo
+
+O guia também exige relatório, 28 capturas nomeadas, identificação dos integrantes, link do GitHub e apresentação em laboratório. Os nomes completos de Vitor Studzieski, Maria Fernanda Passos e Lauan Alves Ferneda já foram informados e constam em `docs/RELATORIO-MODELO.md`; o remoto público `https://github.com/Vitor-Studzieski/AgroPulse` foi confirmado. As 14 primeiras capturas finais já estão na pasta de evidências; 14 ainda faltam. Faltam também os RAs e a data da apresentação. Há um workflow verde para o commit base em `main`; a branch de trabalho continua sem publicar e esse resultado não valida as alterações locais. Publicar, abrir PR e compartilhar mudanças depende de pedido explícito do responsável.
+
+## Pendências priorizadas
+
+1. **Completar as evidências acadêmicas:** inserir os RAs em `docs/RELATORIO-MODELO.md`, completar as 14 capturas pendentes; confirmar a data e ensaiar a apresentação. Repetir ou fotografar a consulta INMET no banco que será usado pelo grupo, se a atividade exigir evidência dentro do relatório.
+2. **Executar CI remoto do branch e abrir PR:** depende de commit/push autorizados. O run verde atual é só da versão base em `main`; nenhum commit ou push foi feito porque `AGENTS.md` exige pedido explícito.
+3. **Publicação externa opcional:** o Blueprint está pronto, mas permanece sem deploy conforme a restrição do usuário. Só criar serviços se o responsável confirmar custo zero, ausência de cartão/trial/upgrade e compatibilidade com os termos vigentes.
+
+Limite conhecido: a API de clima consulta os últimos sete dias por padrão (aceita até 30) ou um ano-calendário importado. A interface seleciona automaticamente o ano importado mais recente quando a janela recente não contém observações; o período também pode ser escolhido manualmente. O ranking acadêmico usa uma amostra versionada da PAM/SIDRA 2023 para SP, que pode ser regenerada via API pública; os polígonos agrícolas continuam sintéticos e próximos exclusivamente ao campus da Fatec Pompéia.

@@ -4,11 +4,12 @@ from fastapi import APIRouter, Depends
 
 from app.db import db
 from app.deps import get_owned_field
+from app.models import ReadingLatestOut
 
 router = APIRouter(prefix="/fields", tags=["readings"])
 
 
-@router.get("/{field_id}/readings/latest")
+@router.get("/{field_id}/readings/latest", response_model=list[ReadingLatestOut])
 async def latest_readings(field: dict = Depends(get_owned_field)):
     since = datetime.now(timezone.utc) - timedelta(hours=24)
     pipeline = [

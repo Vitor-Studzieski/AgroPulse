@@ -1,0 +1,88 @@
+name: agropulse-prod
+
+services:
+  api:
+    build: ./apps/api
+    environment:
+      MONGO_URI: ${MONGO_URI:?configure Atlas MONGO_URI in .env.prod}
+      MONGO_DB: agropulse
+      JWT_SECRET: ${JWT_SECRET:?configure JWT_SECRET in .env.prod}
+      CORS_ORIGINS: https://${WEB_DOMAIN:?configure WEB_DOMAIN in .env.prod}
+      READINGS_TTL_DAYS: ${READINGS_TTL_DAYS:-30}
+    healthcheck:
+      test: ["CMD", "python", "-c", "from urllib.request import urlopen; urlopen('http://127.0.0.1:8000/health', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    networks: [edge]
+    restart: unless-stopped
+
+  web:
+    build:
+      context: ./apps/web
+      args:
+        NEXT_PUBLIC_API_URL: https://${API_DOMAIN:?configure API_DOMAIN in .env.prod}
+    environment:
+      API_INTERNAL_URL: http://api:8000
+    depends_on:
+      api:
+        condition: service_healthy
+    networks: [edge]
+    restart: unless-stopped
+
+  simulator:
+    build: ./apps/workers
+    command: ["python", "-m", "workers.simulator", "--backfill-days", "7", "--live"]
+    volumes:
+      - ./data/imports:/imports:ro
+    environment:
+      MONGO_URI: ${MONGO_URI:?configure Atlas MONGO_URI in .env.prod}
+      MONGO_DB: agropulse
+      SIM_INTERVAL_SECONDS: ${SIM_INTERVAL_SECONDS:-300}
+    networks: [edge]
+    restart: unless-stopped
+
+  alerts:
+    build: ./apps/workers
+    command: ["python", "-m", "workers.alerts"]
+    environment:
+      MONGO_URI: ${MONGO_URI:?configure Atlas MONGO_URI in .env.prod}
+      MONGO_DB: agropulse
+      ALERT_WEBHOOK_URL: ${ALERT_WEBHOOK_URL:-}
+      ALERT_EVAL_SECONDS: ${ALERT_EVAL_SECONDS:-60}
+    networks: [edge]
+    restart: unless-stopped
+
+  rollup:
+    build: ./apps/workers
+    command: ["sh", "-c", "while true; do python -m workers.rollup --days 8; sleep 86400; done"]
+    environment:
+      MONGO_URI: ${MONGO_URI:?configure Atlas MONGO_URI in .env.prod}
+      MONGO_DB: agropulse
+    networks: [edge]
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2-alpine
+    environment:
+      WEB_DOMAIN: ${WEB_DOMAIN:?configure WEB_DOMAIN in .env.prod}
+      API_DOMAIN: ${API_DOMAIN:?configure API_DOMAIN in .env.prod}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on: [web, api]
+    networks: [edge]
+    restart: unless-stopped
+
+volumes:
+  caddy_data:
+  caddy_config:
+
+networks:
+  edge:

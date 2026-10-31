@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends
 
 from app.db import db
-from app.deps import get_owned_farm
+from app.deps import delete_fields, get_owned_farm
 from app.models import FarmIn, FarmOut, FarmUpdate
 from app.security import current_user
 
@@ -42,9 +42,6 @@ async def update_farm(body: FarmUpdate, farm: dict = Depends(get_owned_farm)):
 @router.delete("/{farm_id}", status_code=204)
 async def delete_farm(farm: dict = Depends(get_owned_farm)):
     field_ids = [f["_id"] async for f in db.fields.find({"farm_id": farm["_id"]}, {"_id": 1})]
-    await db.seasons.delete_many({"field_id": {"$in": field_ids}})
-    await db.operations.delete_many({"field_id": {"$in": field_ids}})
+    await delete_fields(field_ids)
     await db.sensors.delete_many({"farm_id": farm["_id"]})
-    await db.alert_rules.delete_many({"field_id": {"$in": field_ids}})
-    await db.fields.delete_many({"farm_id": farm["_id"]})
     await db.farms.delete_one({"_id": farm["_id"]})

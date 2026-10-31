@@ -1,6 +1,8 @@
 import argparse
 import io
 import logging
+import math
+import os
 import shutil
 import tempfile
 import urllib.request
@@ -26,9 +28,10 @@ COLUMN_KEYS = {
 
 def to_float(text):
     try:
-        return float(text.replace(",", "."))
-    except ValueError:
+        value = float(text.replace(",", "."))
+    except (AttributeError, ValueError):
         return None
+    return value if math.isfinite(value) else None
 
 
 def parse_metadata(lines):
@@ -36,6 +39,16 @@ def parse_metadata(lines):
     for line in lines:
         key, _, value = line.partition(";")
         values[key.strip().rstrip(":").upper()] = value.strip().strip(";").strip()
+    longitude = to_float(values.get("LONGITUDE", ""))
+    latitude = to_float(values.get("LATITUDE", ""))
+    if (
+        longitude is None
+        or latitude is None
+        or not -180 <= longitude <= 180
+        or not -90 <= latitude <= 90
+    ):
+        raise ValueError("estação INMET com coordenadas WGS84 inválidas")
+
     return {
         "code": values["CODIGO (WMO)"],
         "name": values["ESTACAO"],
@@ -43,16 +56,28 @@ def parse_metadata(lines):
         "region": values["REGIAO"],
         "location": {
             "type": "Point",
-            "coordinates": [to_float(values["LONGITUDE"]), to_float(values["LATITUDE"])],
+            "coordinates": [longitude, latitude],
         },
         "altitude_m": to_float(values.get("ALTITUDE", "")),
     }
 
 
 def parse_dates(series):
-    text = series.astype(str).str.strip().str.replace("/", "-", regex=False)
-    year_first = len(text.iloc[0].split("-")[0]) == 4
-    return pd.to_datetime(text, format="%Y-%m-%d" if year_first else "%d-%m-%Y", errors="coerce")
+    def parse_one(value):
+        text = str(value).strip().replace("/", "-")
+        if not text or text.lower() == "nan":
+            return pd.NaT
+        if len(text.split("-")[0]) == 4:
+            formats = ("%Y-%m-%d", "%Y%m%d")
+        else:
+            formats = ("%d-%m-%Y", "%d-%m-%y")
+        for date_format in formats:
+            parsed = pd.to_datetime(text, format=date_format, errors="coerce")
+            if pd.notna(parsed):
+                return parsed
+        return pd.NaT
+
+    return pd.to_datetime(series.map(parse_one), errors="coerce")
 
 
 def parse_station(text):
@@ -86,7 +111,11 @@ def to_documents(station, frame):
     documents = []
     for row in frame.to_dict("records"):
         document = {"ts": row.pop("ts").to_pydatetime(), "station": dict(meta)}
-        document.update({key: float(value) for key, value in row.items() if pd.notna(value)})
+        for key, value in row.items():
+            if pd.notna(value):
+                number = float(value)
+                if math.isfinite(number):
+                    document[key] = number
         documents.append(document)
     return documents
 
@@ -95,6 +124,7 @@ def load_station(db, station, frame):
     db.weather_stations.replace_one({"code": station["code"]}, station, upsert=True)
     if frame.empty:
         return 0
+    frame = frame.drop_duplicates(subset=["ts"], keep="last").sort_values("ts")
     start = frame["ts"].min().to_pydatetime()
     end = frame["ts"].max().to_pydatetime()
     db.weather_hourly.delete_many(
@@ -106,15 +136,24 @@ def load_station(db, station, frame):
     return len(documents)
 
 
-def import_zip(db, path, states):
+def import_zip(db, path, states, year=None):
     total = 0
+    states = {state.strip().upper() for state in states if state.strip()}
+    if not states:
+        raise ValueError("Informe ao menos uma UF para limitar a importação do INMET.")
     with zipfile.ZipFile(path) as archive:
         for name in sorted(archive.namelist()):
             if not name.upper().endswith(".CSV"):
                 continue
-            station, frame = parse_station(archive.read(name).decode("latin-1"))
+            try:
+                station, frame = parse_station(archive.read(name).decode("latin-1"))
+            except (KeyError, ValueError, pd.errors.ParserError) as error:
+                log.warning("CSV de estação ignorado (%s): %s", name, error)
+                continue
             if states and station["state"] not in states:
                 continue
+            if year is not None:
+                frame = frame[frame["ts"].dt.year == year]
             count = load_station(db, station, frame)
             total += count
             log.info("%s (%s): %s leituras", station["name"], station["state"], f"{count:,}")
@@ -124,11 +163,18 @@ def import_zip(db, path, states):
 def download(year):
     target = Path(tempfile.gettempdir()) / f"inmet-{year}.zip"
     if not target.exists():
+        temporary = target.with_suffix(".zip.part")
         request = urllib.request.Request(
             URL_TEMPLATE.format(year=year), headers={"User-Agent": "agropulse-importer"}
         )
-        with urllib.request.urlopen(request, timeout=120) as response, open(target, "wb") as out:
-            shutil.copyfileobj(response, out)
+        try:
+            with urllib.request.urlopen(request, timeout=120) as response, open(
+                temporary, "wb"
+            ) as out:
+                shutil.copyfileobj(response, out)
+            os.replace(temporary, target)
+        finally:
+            temporary.unlink(missing_ok=True)
     return target
 
 
@@ -136,12 +182,12 @@ def main():
     setup_logging()
     parser = argparse.ArgumentParser()
     parser.add_argument("--year", type=int, required=True)
-    parser.add_argument("--states", nargs="*", default=[])
+    parser.add_argument("--states", nargs="+", required=True)
     parser.add_argument("--file", type=Path)
     args = parser.parse_args()
 
     path = args.file or download(args.year)
-    total = import_zip(get_db(), path, set(args.states))
+    total = import_zip(get_db(), path, set(args.states), args.year)
     log.info("importação concluída: %s leituras", f"{total:,}")
 
 

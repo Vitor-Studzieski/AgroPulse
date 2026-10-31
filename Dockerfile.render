@@ -1,0 +1,19 @@
+FROM python:3.12-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PORT=10000
+
+WORKDIR /srv
+
+COPY requirements-render.lock /tmp/requirements-render.lock
+RUN pip install --no-cache-dir --require-hashes -r /tmp/requirements-render.lock \
+    && useradd --create-home appuser
+
+COPY apps/api/app /srv/app
+COPY apps/workers/workers /srv/workers
+COPY scripts/render_supervisor.py /srv/render_supervisor.py
+
+USER appuser
+EXPOSE 10000
+CMD ["python", "/srv/render_supervisor.py"]

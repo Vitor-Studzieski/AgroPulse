@@ -5,7 +5,18 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
 from app.db import client, db
-from app.routers import analytics, auth, farms, fields, readings
+from app.routers import (
+    alert_rules,
+    alerts,
+    analytics,
+    auth,
+    farms,
+    fields,
+    operations,
+    readings,
+    seasons,
+    sensors,
+)
 
 
 @asynccontextmanager
@@ -23,10 +34,22 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-for module in (auth, farms, fields, readings, analytics):
+for module in (
+    auth,
+    farms,
+    fields,
+    seasons,
+    operations,
+    sensors,
+    alert_rules,
+    alerts,
+    readings,
+    analytics,
+):
     app.include_router(module.router)
 
 
+@app.head("/health", include_in_schema=False)
 @app.get("/health", tags=["infra"])
 async def health():
     await db.command("ping")

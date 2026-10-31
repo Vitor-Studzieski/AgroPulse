@@ -1,8 +1,14 @@
 name: ci
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 on:
   push:
-    branches: [main]
   pull_request:
 
 jobs:
@@ -17,8 +23,8 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-          cache-dependency-path: apps/api/requirements-dev.txt
-      - run: pip install -r requirements-dev.txt
+          cache-dependency-path: apps/api/requirements-dev.lock
+      - run: pip install --require-hashes -r requirements-dev.lock
       - run: ruff check .
       - run: pytest -q
 
@@ -33,10 +39,13 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-          cache-dependency-path: apps/workers/requirements-dev.txt
-      - run: pip install -r requirements-dev.txt
+          cache-dependency-path: apps/workers/requirements-dev.lock
+      - run: pip install --require-hashes -r requirements-dev.lock
       - run: ruff check .
       - run: pytest -q
+      - name: Validar o gerador da amostra PAM versionada
+        run: python -m py_compile scripts/download_pam_sp.py
+        working-directory: .
 
   web:
     runs-on: ubuntu-latest
@@ -62,7 +71,11 @@ jobs:
           docker run -d --name mongo mongo:7
           until docker exec mongo mongosh --quiet --eval "db.adminCommand('ping').ok" >/dev/null 2>&1; do sleep 2; done
           docker run --rm --network container:mongo -v "$PWD/infra/mongo:/scripts:ro" mongo:7 \
-            mongosh "mongodb://localhost:27017/agropulse" --quiet --file /scripts/02-schema.js
+            mongosh "mongodb://localhost:27017/agropulse" --quiet --eval "var READINGS_TTL_DAYS = 30" --file /scripts/02-schema.js
+      - name: Verificar time series, TTL, índices e validação de documentos
+        run: |
+          docker run --rm --network container:mongo -v "$PWD/infra/mongo:/scripts:ro" mongo:7 \
+            mongosh "mongodb://localhost:27017/agropulse" --quiet --eval "var EXPECTED_READINGS_TTL_DAYS = 30" --file /scripts/03-verify-schema.js
 
   compose:
     runs-on: ubuntu-latest
@@ -70,4 +83,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: docker compose config -q
+      - run: docker compose -f docker-compose.web.yml config -q
+      - run: docker compose -f docker-compose.api.yml config -q
+      - run: docker compose -f docker-compose.workers.yml config -q
+      - run: JWT_SECRET=ci-only WEB_DOMAIN=web.example API_DOMAIN=api.example MONGO_URI=mongodb://ci:ci@db.example/agropulse docker compose -f docker-compose.prod.yml config -q
       - run: docker compose build
+      - name: Validar Blueprint da Render
+        run: ruby -ryaml -e 'config = YAML.load_file("render.yaml"); abort "Blueprint inválido" unless config.is_a?(Hash) && config["services"].is_a?(Array) && config["services"].length == 1 && config["services"][0]["runtime"] == "docker"'
+      - name: Construir imagem única da API e workers
+        run: docker build -f Dockerfile.render -t agropulse-render-ci .

@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException
 
 from app.db import db
-from app.deps import get_owned_field, to_object_id
+from app.deps import delete_fields, get_owned_field, to_object_id
 from app.geo import area_ha, centroid
 from app.models import FieldIn, FieldOut, FieldUpdate
 from app.security import current_user
@@ -18,8 +18,8 @@ async def ensure_farm_owner(farm_id, user):
 
 
 def geometry_fields(boundary):
-    ring = boundary["coordinates"][0]
-    return {"boundary": boundary, "area_ha": round(area_ha(ring), 2), "centroid": centroid(ring)}
+    rings = boundary["coordinates"]
+    return {"boundary": boundary, "area_ha": round(area_ha(rings), 2), "centroid": centroid(rings)}
 
 
 @router.post("", response_model=FieldOut, status_code=201)
@@ -59,8 +59,4 @@ async def update_field(body: FieldUpdate, field: dict = Depends(get_owned_field)
 
 @router.delete("/{field_id}", status_code=204)
 async def delete_field(field: dict = Depends(get_owned_field)):
-    await db.seasons.delete_many({"field_id": field["_id"]})
-    await db.operations.delete_many({"field_id": field["_id"]})
-    await db.sensors.delete_many({"field_id": field["_id"]})
-    await db.alert_rules.delete_many({"field_id": field["_id"]})
-    await db.fields.delete_one({"_id": field["_id"]})
+    await delete_fields([field["_id"]])
