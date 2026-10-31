@@ -4,6 +4,12 @@ Plataforma de monitoramento de safra com telemetria de sensores e dados climáti
 
 Projeto da atividade prática **IAL-215 – Banco de Dados NoSQL**.
 
+## Entrega acadêmica
+
+- [Apresentação em PowerPoint](docs/apresentacao/AgroPulse-IAL-215.pptx)
+- [Roteiro de 12 minutos](docs/ROTEIRO-APRESENTACAO.md)
+- [Relatório técnico](docs/RELATORIO-MODELO.md)
+
 ## Subir a demonstração local
 
 Pré-requisito: Docker com Compose.

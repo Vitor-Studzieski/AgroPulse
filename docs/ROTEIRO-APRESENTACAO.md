@@ -2,6 +2,8 @@
 
 Roteiro de apoio para a demonstração acadêmica da atividade IAL-215. Ajuste a duração e a divisão de falas ao tempo definido pelo professor.
 
+O [deck da apresentação (PPTX)](apresentacao/AgroPulse-IAL-215.pptx) tem seis slides alinhados à divisão sugerida abaixo e pode ser aberto localmente no dia da demonstração.
+
 ## Mensagem central
 
 O AgroPulse reúne cadastro rural, telemetria, alertas e contexto climático e produtivo em uma plataforma que pode ser executada localmente sem custo incremental. A referência espacial da demonstração é somente o campus da Fatec Pompéia. Existe uma fazenda demonstrativa com três polígonos sintéticos próximos ao campus; eles servem para demonstrar operações geoespaciais e não representam talhões reais da Fatec.
