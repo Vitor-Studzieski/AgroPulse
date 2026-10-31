@@ -4,7 +4,7 @@ Salve as capturas listadas no apêndice A de [RELATORIO-MODELO.md](../RELATORIO-
 
 Use apenas dados de demonstração nos prints. Não inclua senhas, tokens, strings de conexão, dados pessoais ou credenciais de serviços. Para GitHub Actions, capture o resultado real depois que o workflow remoto for executado; não produza uma imagem ilustrativa no lugar do check.
 
-Capturas finais previstas no apêndice já salvas: `01-login.png` a `14-codigo-change-stream.png`. A captura Swagger mostra a rota pública `GET /health` e a resposta HTTP 200 (`{"status":"ok"}`). `painel-visao-geral.png` é uma imagem complementar do dashboard. As telas de Safras e Operações mostram estados vazios reais da demonstração; não foram criados registros apenas para preencher capturas. As outras 14 capturas previstas seguem pendentes. Os RAs e a data da apresentação devem ser completados pelo grupo antes da entrega.
+Das 28 capturas previstas no apêndice A, 18 estão salvas: `01-login.png` a `14-codigo-change-stream.png`, `21-compass-colecoes.png`, `22-documento-fields.png`, `27-github-repo.png` e `28-github-actions-verde.png`. A captura Swagger mostra a rota pública `GET /health` e a resposta HTTP 200 (`{"status":"ok"}`). `painel-visao-geral.png` é uma imagem complementar do dashboard. As telas de Safras e Operações mostram estados vazios reais da demonstração; não foram criados registros apenas para preencher capturas. As capturas 15–20 e 23–26 seguem pendentes. O run #3 do GitHub Actions, referente ao commit de implementação `285c32c`, passou nos cinco jobs. Os RAs e a data da apresentação devem ser completados pelo grupo antes da entrega.
 
 ## Conteúdo de cada captura
 
@@ -21,6 +21,6 @@ Use esta lista para conferir o enquadramento antes de marcar um item como conclu
 | `19-geointersects` | Compass mongosh: consultar `fields.boundary` com `$geoIntersects` no ponto do campus `[-50.1994, -22.1110]`; mostrar o talhão de demonstração retornado. |
 | `20-agregacao-media-diaria` | Compass mongosh: média diária de `soil_moisture` agrupada por talhão e dia, conforme consulta em `docs/MODELO-DADOS.md`. |
 | `21-compass-colecoes`, `22-documento-fields`, `23-documento-sensor-reading`, `24-indices-fields`, `25-validacao-farms`, `26-field-daily-stats` | Compass: lista de coleções; documento de `fields`; documento em `sensor_readings`; índices de `fields`; validação de `farms`; documento agregado em `field_daily_stats`. `make demo` executa o rollup inicial. |
-| `27-github-repo`, `28-github-actions-verde` | Navegador no repositório correto e no run verde do commit entregue. Não reutilizar a captura do commit base para afirmar que o branch atual passou no CI. |
+| `27-github-repo`, `28-github-actions-verde` | Branch público `feature/agropulse-completion`, PR #1 aberto e run #3 verde para o commit de implementação `285c32c`. A captura do CI mostra os cinco jobs aprovados. O PR permanece aberto para revisão. |
 
-Para os itens 15–20, mantenha comando e resposta na mesma captura. Não mostre tokens, senhas, connection strings, dados pessoais ou documentos fora da demonstração. As capturas 27–28 dependem da publicação autorizada do branch e de uma execução concluída do Actions.
+Para os itens 15–20, mantenha comando e resposta na mesma captura. Não mostre tokens, senhas, connection strings, dados pessoais ou documentos fora da demonstração. Os itens 21–22 e 27–28 já foram conferidos visualmente; marque no apêndice somente os arquivos salvos e revisados.
