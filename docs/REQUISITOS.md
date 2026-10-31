@@ -59,11 +59,11 @@ Esta matriz converte os requisitos do guia de engenharia (seções 2–14) em ev
 
 ## Evidências acadêmicas pendentes do grupo
 
-O guia também exige relatório, 28 capturas nomeadas, identificação dos integrantes, link do GitHub e apresentação em laboratório. Os nomes completos de Vitor Studzieski, Maria Fernanda Passos e Lauan Alves Ferneda já foram informados e constam em `docs/RELATORIO-MODELO.md`; o remoto público `https://github.com/Vitor-Studzieski/AgroPulse` foi confirmado. Há 19 capturas salvas e conferidas; faltam as capturas 15–20 e 24–26 (9 no total). Os RAs e a data da apresentação ainda precisam ser informados pelo grupo. A branch `feature/agropulse-completion` está publicada no PR #1, aberto e sem merge; o run #7 do commit `eab0007` passou nos cinco jobs.
+O guia também exige relatório, 28 capturas nomeadas, identificação dos integrantes, link do GitHub e apresentação em laboratório. Os nomes completos de Vitor Studzieski, Maria Fernanda Passos e Lauan Alves Ferneda já foram informados e constam em `docs/RELATORIO-MODELO.md`; o remoto público `https://github.com/Vitor-Studzieski/AgroPulse` foi confirmado. Há 26 capturas finais revisadas, incluindo o documento agregado da coleção `field_daily_stats` na captura 26. Os arquivos 15 e 18 existem, mas devem ser recapturados sem os erros exploratórios que aparecem na tela. Os RAs e a data da apresentação ainda precisam ser informados pelo grupo. A branch `feature/agropulse-completion` está publicada no PR #1, aberto e sem merge; o run #7 do commit `eab0007` passou nos cinco jobs.
 
 ## Pendências priorizadas
 
-1. **Completar as evidências acadêmicas:** inserir os RAs em `docs/RELATORIO-MODELO.md`, completar as 9 capturas pendentes; confirmar a data e ensaiar a apresentação. Repetir ou fotografar a consulta INMET no banco que será usado pelo grupo, se a atividade exigir evidência dentro do relatório.
+1. **Completar as evidências acadêmicas:** inserir os RAs em `docs/RELATORIO-MODELO.md`, recapturar 15 e 18 sem os erros exploratórios; confirmar a data e ensaiar a apresentação. Repetir ou fotografar a consulta INMET no banco que será usado pelo grupo, se a atividade exigir evidência dentro do relatório.
 2. **Manter os checks e a revisão do PR:** o PR #1 está aberto. Conferir o CI a cada nova atualização e não mesclar antes de todos os checks ficarem verdes e de a revisão final ser concluída.
 3. **Publicação externa opcional:** o Blueprint está pronto, mas permanece sem deploy conforme a restrição do usuário. Só criar serviços se o responsável confirmar custo zero, ausência de cartão/trial/upgrade e compatibilidade com os termos vigentes.
 

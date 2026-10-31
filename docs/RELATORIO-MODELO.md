@@ -122,7 +122,7 @@ O documento [docs/MODELO-DADOS.md](MODELO-DADOS.md) contém campos, índices, ex
 | RF09 | Importador SIDRA/PAM e ranking municipal | CSV oficial da PAM/SIDRA 2023 para os 645 municípios de SP em `data/imports/pam-sp-2023.csv`; 1.556 registros completos importados no Mongo local (480 soja, 564 milho, 512 cana), incluindo Pompéia. API autenticada e painel exibiram o ranking de soja de SP. |
 | RF10 | Painel, mapa, clima e ranking | Capturas das telas correspondentes |
 
-A interface Next.js autentica pela API FastAPI e oferece o painel e os formulários dos recursos agrícolas. A API verifica o vínculo entre usuário e fazenda antes de operar sobre os dados. Os workers simulam leituras, avaliam regras, enviam webhooks quando configurados e importam dados públicos. Sem webhook, o sistema registra a entrega do alerta no log local. O roteiro detalhado das telas e da apresentação está em [docs/ROTEIRO-APRESENTACAO.md](ROTEIRO-APRESENTACAO.md); 19 capturas finais das 28 previstas estão em `docs/evidencias/`, além de uma imagem complementar do painel. As capturas 15–20 e 24–26 seguem pendentes no checklist do apêndice A.
+A interface Next.js autentica pela API FastAPI e oferece o painel e os formulários dos recursos agrícolas. A API verifica o vínculo entre usuário e fazenda antes de operar sobre os dados. Os workers simulam leituras, avaliam regras, enviam webhooks quando configurados e importam dados públicos. Sem webhook, o sistema registra a entrega do alerta no log local. O roteiro detalhado das telas e da apresentação está em [docs/ROTEIRO-APRESENTACAO.md](ROTEIRO-APRESENTACAO.md); 26 das 28 capturas previstas estão revisadas como finais em `docs/evidencias/`, além de uma imagem complementar do painel. A captura 26 mostra os 24 documentos agregados em `field_daily_stats`. As capturas 15 e 18 precisam ser refeitas sem erros exploratórios.
 
 ## 7. Testes e verificações
 
@@ -159,13 +159,13 @@ Limitações verificadas ou pendentes de evidência:
 - Na validação descartável sem volume, o ZIP oficial do INMET 2024 foi importado com filtro SP após aplicação de `infra/mongo/02-schema.js`: 40 estações e 351.360 observações. A amostra compacta versionada conserva somente o arquivo oficial da A763/Marília (8.784 leituras). `make demo` a carrega para que a demonstração anual funcione em um clone limpo; a API e o painel mostraram A763 a 27,8 km do campus e a última observação em 31/12/2024 23:00 UTC (20:00 no horário local). Ainda falta anexar a captura acadêmica.
 - A fixture SIDRA oficial de Sorriso (MT), ano 2023, valida leitura e parsing e foi importada em um MongoDB temporário sem volume persistente; foram conferidos três documentos (soja, milho e cana). Repetir ou fotografar essa consulta no ambiente de demonstração do grupo, se exigido.
 - A amostra oficial da PAM/SIDRA 2023 para SP está versionada em `data/imports/pam-sp-2023.csv` e é carregada por `make demo` sem consulta externa. O gerador consultou as APIs oficiais e reproduziu o CSV versionado byte a byte. O importador persistiu 1.556 combinações municipais completas; a API autenticada retornou o top 10 de soja por produtividade e o painel exibiu Pompéia na referência oficial regional. Isso não altera a demonstração espacial, que permanece limitada ao campus e a polígonos sintéticos próximos.
-- A branch pública `feature/agropulse-completion` está no remoto `https://github.com/Vitor-Studzieski/AgroPulse` e o PR #1 está aberto para revisão, sem merge. O CI do commit de implementação `285c32c` passou nos cinco jobs. Faltam as evidências 15–20 e 24–26, os RAs e a data da apresentação para fechar a versão acadêmica final.
+- A branch pública `feature/agropulse-completion` está no remoto `https://github.com/Vitor-Studzieski/AgroPulse` e o PR #1 está aberto para revisão, sem merge. O CI do commit de implementação `285c32c` passou nos cinco jobs. Faltam recapturar 15 e 18 sem erros exploratórios, inserir os RAs e confirmar a data da apresentação para fechar a versão acadêmica final.
 
 Como trabalhos futuros, podem ser considerados autenticação de dispositivos e ingestão por gateway, exportação do relatório de safra e avaliação com uma carga de dados maior, preservando os limites financeiros definidos.
 
 ## 10. Conclusão
 
-O AgroPulse reúne CRUD agrícola, persistência MongoDB, telemetria, geodados, análises e workers em uma solução local reproduzível. A conclusão acadêmica depende de executar o roteiro, anexar as 9 capturas finais restantes, completar os RAs e confirmar a data da apresentação.
+O AgroPulse reúne CRUD agrícola, persistência MongoDB, telemetria, geodados, análises e workers em uma solução local reproduzível. A conclusão acadêmica depende de executar o roteiro, recapturar 15 e 18 sem erros exploratórios, completar os RAs e confirmar a data da apresentação.
 
 ## Referências
 
