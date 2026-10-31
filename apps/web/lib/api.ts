@@ -36,6 +36,17 @@ export async function apiFetch<T>(path: string, token?: string, init: RequestIni
     } catch {
       body = await response.text().catch(() => "");
     }
+    if (
+      response.status === 401 &&
+      token &&
+      body &&
+      typeof body === "object" &&
+      "detail" in body &&
+      (body as { detail?: unknown }).detail === "credenciais inválidas" &&
+      typeof window !== "undefined"
+    ) {
+      window.dispatchEvent(new CustomEvent("agropulse:unauthorized", { detail: token }));
+    }
     throw new Error(errorMessage(response.status, body));
   }
   if (response.status === 204) return undefined as T;

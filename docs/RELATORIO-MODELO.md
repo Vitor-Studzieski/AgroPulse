@@ -126,18 +126,18 @@ A interface Next.js autentica pela API FastAPI e oferece o painel e os formulár
 
 ## 7. Testes e verificações
 
-Esta seção registra as verificações executadas e as evidências disponíveis. As suítes de API e workers, o build de produção da interface e os manifests/builds locais foram executados. A branch `feature/agropulse-completion` foi publicada. O run #23 do CI no PR #1 passou nos cinco jobs para o commit `34d09fd`; a captura 28 registra esse run.
+Esta seção registra as verificações executadas e as evidências disponíveis. As suítes de API e workers, o build de produção da interface e os manifests/builds locais foram executados. A branch `feature/agropulse-completion` foi publicada. Os runs #24 e #25 do CI no PR #1 passaram nos cinco jobs para o commit `e138720`.
 
 | Verificação | Resultado observado | Data / evidência |
 |---|---|---|
-| Ruff e pytest da API | Aprovados; 52 testes | Validação local em 2026-10-31; anexar log/captura |
-| Ruff e pytest dos workers | Aprovados; 18 testes | Validação local em 2026-10-30; anexar log/captura |
-| Build de produção do Next.js | Aprovado | Validação local em 2026-10-30; anexar log/captura |
-| Schema aplicado e verificado em MongoDB limpo | Aprovado; duas coleções time series, TTL de 30 dias, índices essenciais, plano `IXSCAN` e rejeição sem persistência de documento inválido | MongoDB 7 descartável em 2026-10-31; anexar 12-schema-js e 17-validacao-erro |
-| Compose e smoke tests locais | Os três ambientes isolados iniciaram; endpoints de saúde e documentação responderam | Validação local; anexar log/captura |
+| Ruff e pytest da API | Aprovados; 52 testes | Validação local em 2026-10-31; reforçada pelos runs #24 e #25 do CI |
+| Ruff e pytest dos workers | Aprovados; 18 testes | Validação local em 2026-10-30; reforçada pelos runs #24 e #25 do CI |
+| Build de produção do Next.js | Aprovado | Validação local em 2026-10-31; reforçada pelos runs #24 e #25 do CI |
+| Schema aplicado e verificado em MongoDB limpo | Aprovado; duas coleções time series, TTL de 30 dias, índices essenciais, plano `IXSCAN` e rejeição sem persistência de documento inválido | MongoDB 7 descartável em 2026-10-31; capturas 12 e 17 do apêndice A |
+| Compose e smoke tests locais | Os três ambientes isolados iniciaram; endpoints de saúde e documentação responderam | Validação local; resposta de saúde na captura 09 e job Compose nos runs #24 e #25 |
 | Demonstração em banco vazio | `make demo` em projeto Compose isolado criou seed, 3 talhões e 6 sensores; backfill gerou 12.096 leituras sintéticas de sete dias; importou INMET A763 (8.784 leituras) e PAM/SP (1.556 registros); o rollup criou 24 documentos em `field_daily_stats`. A API autenticada retornou clima 2024 e top 10 do ranking 2023. A segunda execução manteve as contagens, sem backfill duplicado ou resumos diários duplicados. Em revalidação isolada, a stack respondeu no health check e na web e persistiu 12.432 leituras ao vivo/históricas, 24 agregados, 1.556 registros PAM/SP e 8.784 observações INMET/A763. | 2026-10-30 e 2026-10-31; os volumes temporários foram removidos após cada conferência |
 | Fluxo CRUD integrado | Cadastro/login, recursos agrícolas, telemetria simulada, alerta avaliado pelo worker e exclusão da conta temporária concluídos; token revogado retornou 401 | Stack local isolada em 2026-10-30; conta descartável removida após a validação |
-| GitHub Actions remoto | Aprovado em 2026-10-31 nos jobs schema, workers, api, web e compose | Run #23 do PR #1, commit `34d09fd`; cinco jobs aprovados. A captura `28-github-actions-verde.png` registra esse run. |
+| GitHub Actions remoto | Aprovado em 2026-10-31 nos jobs schema, workers, api, web e compose | Runs #24 e #25 do PR #1, commit `e138720`; cinco jobs aprovados em cada execução. A captura 28 registra visualmente o run #23 de um commit anterior. |
 
 ## 8. Demonstração
 
@@ -159,7 +159,7 @@ Limitações verificadas ou pendentes de evidência:
 - Na validação descartável sem volume, o ZIP oficial do INMET 2024 foi importado com filtro SP após aplicação de `infra/mongo/02-schema.js`: 40 estações e 351.360 observações. A amostra compacta versionada conserva somente o arquivo oficial da A763/Marília (8.784 leituras). `make demo` a carrega para que a demonstração anual funcione em um clone limpo; a API e o painel mostraram A763 a 27,8 km do campus e a última observação em 31/12/2024 23:00 UTC (20:00 no horário local). A imagem complementar `docs/evidencias/painel-visao-geral.png` registra o cartão de clima com o ano 2024, a estação e a última observação às 20:00 no horário local.
 - A fixture SIDRA oficial de Sorriso (MT), ano 2023, valida leitura e parsing e foi importada em um MongoDB temporário sem volume persistente; foram conferidos três documentos (soja, milho e cana). Repetir ou fotografar essa consulta no ambiente de demonstração do grupo, se exigido.
 - A amostra oficial da PAM/SIDRA 2023 para SP está versionada em `data/imports/pam-sp-2023.csv` e é carregada por `make demo` sem consulta externa. O gerador consultou as APIs oficiais e reproduziu o CSV versionado byte a byte. O importador persistiu 1.556 combinações municipais completas; a API autenticada retornou o top 10 de soja por produtividade e o painel exibiu Pompéia na referência oficial regional. Isso não altera a demonstração espacial, que permanece limitada ao campus e a polígonos sintéticos próximos.
-- A branch pública `feature/agropulse-completion` está no remoto `https://github.com/Vitor-Studzieski/AgroPulse` e o PR #1 está aberto para revisão, sem merge. O run #23 do CI no commit `34d09fd` passou nos cinco jobs e está registrado na captura 28. As capturas 01–09 e 27–28 foram atualizadas para mostrar as páginas atuais sem moldura do navegador. Ainda faltam inserir os RAs e confirmar a data da apresentação para fechar a versão acadêmica final.
+- A branch pública `feature/agropulse-completion` está no remoto `https://github.com/Vitor-Studzieski/AgroPulse` e o PR #1 está aberto para revisão, sem merge. Os runs #24 e #25 do CI no commit `e138720` passaram nos cinco jobs. Ainda faltam inserir os RAs e confirmar a data da apresentação para fechar a versão acadêmica final.
 
 Como trabalhos futuros, podem ser considerados autenticação de dispositivos e ingestão por gateway, exportação do relatório de safra e avaliação com uma carga de dados maior, preservando os limites financeiros definidos.
 

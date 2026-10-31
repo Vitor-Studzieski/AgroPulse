@@ -85,7 +85,7 @@ function Brand({ compact = false }: { compact?: boolean }) {
   return <div className="brand"><span className="brand-mark"><Icon name="leaf" size={21}/></span>{!compact && <span>Agro<span className="brand-light">Pulse</span><small>GESTÃO INTELIGENTE</small></span>}</div>;
 }
 
-function AuthScreen({ onAuthenticated }: { onAuthenticated: (token: string, user: User) => void }) {
+function AuthScreen({ onAuthenticated, sessionExpired = false }: { onAuthenticated: (token: string, user: User) => void; sessionExpired?: boolean }) {
   const [mode, setMode] = useState<"login" | "register">("login");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -132,6 +132,7 @@ function AuthScreen({ onAuthenticated }: { onAuthenticated: (token: string, user
         <span className="eyebrow muted-eyebrow">SEU ESPAÇO DE GESTÃO</span>
         <h2>{mode === "login" ? "Bem-vindo de volta" : "Comece por aqui"}</h2>
         <p className="auth-subtitle">{mode === "login" ? "Acesse sua conta para acompanhar sua operação." : "Crie seu acesso e organize sua produção."}</p>
+        {sessionExpired && mode === "login" && <div className="integration-note" role="status">Sua sessão expirou. Entre novamente para continuar.</div>}
         <form className="auth-form" onSubmit={submit}>
           {mode === "register" && <label>Seu nome<input name="name" type="text" placeholder="Ex.: Ana Souza" minLength={2} maxLength={80} autoComplete="name" required/></label>}
           <label>E-mail<input name="email" type="email" placeholder="voce@exemplo.com" autoComplete="email" required/></label>
@@ -285,6 +286,7 @@ function Toast({ notice, onDismiss }: { notice: Notice | null; onDismiss: () => 
 export default function Home() {
   const [token, setToken] = useState<string | null>(null);
   const [user, setUser] = useState<User | null>(null);
+  const [sessionExpired, setSessionExpired] = useState(false);
   const [ready, setReady] = useState(false);
   const [page, setPage] = useState<Page>("overview");
   const [farms, setFarms] = useState<Farm[]>([]);
@@ -375,6 +377,18 @@ export default function Home() {
     setToken(null); setUser(null); setFarms([]); setFields([]); setSeasons([]); setOperations([]); setSensors([]); setSelectedFarmId(""); setSelectedFieldId("");
     setAccountOpen(false);
   }, []);
+
+  useEffect(() => {
+    const handleUnauthorized = (event: Event) => {
+      const expiredToken = (event as CustomEvent<string>).detail;
+      if (expiredToken && window.localStorage.getItem("agropulse_token") === expiredToken) {
+        setSessionExpired(true);
+        logout();
+      }
+    };
+    window.addEventListener("agropulse:unauthorized", handleUnauthorized);
+    return () => window.removeEventListener("agropulse:unauthorized", handleUnauthorized);
+  }, [logout]);
 
   const updateAccount = async (body: AccountUpdate) => {
     if (!token) return;
@@ -493,7 +507,7 @@ export default function Home() {
   useEffect(() => { if (token && fields.length) void loadAlerts(token, fields); }, [token, fields, loadAlerts]);
 
   const signIn = (auth: string, profile: User) => {
-    window.localStorage.setItem("agropulse_token", auth); setToken(auth); setUser(profile); setReady(false);
+    window.localStorage.setItem("agropulse_token", auth); setSessionExpired(false); setToken(auth); setUser(profile); setReady(false);
     loadFarms(auth).then(() => { setReady(true); }).catch((error) => { setReady(true); setFarmLoadError(detailOf(error)); });
   };
 
@@ -577,7 +591,7 @@ export default function Home() {
   const deleteRule = async (rule: AlertRule) => { if (!token || !window.confirm("Excluir esta regra de alerta?")) return; try { await apiFetch<void>(`/alert-rules/${encodeURIComponent(entityId(rule))}`, token, { method: "DELETE" }); await loadAlerts(token, fields); setNotice({ kind: "success", text: "Regra removida." }); } catch (error) { setNotice({ kind: "error", text: detailOf(error) }); } };
 
   if (!ready) return <main className="boot-screen"><Brand/><span className="spinner"/></main>;
-  if (!token || !user) return <AuthScreen onAuthenticated={signIn}/>;
+  if (!token || !user) return <AuthScreen onAuthenticated={signIn} sessionExpired={sessionExpired}/>;
 
   const addFarm = () => setFarmModal({ mode: "create" });
   const addField = () => { if (!farm) { setNotice({ kind: "error", text: "Cadastre ou selecione uma fazenda primeiro." }); return; } setFieldModal({ mode: "create" }); };
