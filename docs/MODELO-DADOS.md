@@ -94,7 +94,7 @@ db.sensor_readings.aggregate([
   { $sort: { "_id.day": 1 } }
 ])
 
-db.fields.explain("executionStats").find({ crop: "soja" }).hint({ crop: 1 })
+db.fields.find({ crop: "soja" }).hint({ crop: 1 }).explain("executionStats").queryPlanner.winningPlan
 
 ```
 
