@@ -86,6 +86,10 @@ jobs:
       - run: docker compose -f docker-compose.web.yml config -q
       - run: docker compose -f docker-compose.api.yml config -q
       - run: docker compose -f docker-compose.workers.yml config -q
+      - name: Validar URLs com portas isoladas
+        run: |
+          API_PORT=34101 WEB_PORT=34100 MONGO_PORT=34102 docker compose --env-file .env.example config --format json |
+            python -c 'import json, sys; c=json.load(sys.stdin); assert c["services"]["web"]["build"]["args"]["NEXT_PUBLIC_API_URL"] == "http://localhost:34101"; assert c["services"]["api"]["environment"]["CORS_ORIGINS"] == "http://localhost:34100"; assert c["services"]["api"]["ports"][0]["published"] == "34101"; assert c["services"]["web"]["ports"][0]["published"] == "34100"'
       - run: JWT_SECRET=ci-only WEB_DOMAIN=web.example API_DOMAIN=api.example MONGO_URI=mongodb://ci:ci@db.example/agropulse docker compose -f docker-compose.prod.yml config -q
       - run: docker compose build
       - name: Validar Blueprint da Render

@@ -2,15 +2,9 @@
 
 Prazo de entrega: **16/11/2026**. A data da apresentação no laboratório deve ser confirmada com o professor.
 
-## Divisão provisória sugerida para 3 integrantes
+## Responsabilidade pelo projeto
 
-Os nomes foram associados aos focos na ordem informada pelo grupo. A divisão pode ser ajustada entre os integrantes antes do ensaio.
-
-| Integrante | Foco | Entregas |
-|---|---|---|
-| Vitor Studzieski | Infra, banco e ingestão | Compose, schema, índices, seed, importadores INMET e SIDRA/PAM, rollup |
-| Maria Fernanda Passos | API e regras de negócio | Autenticação, CRUD, validações, autorização, alertas e testes de integração |
-| Lauan Alves Ferneda | Interface, integração e entrega acadêmica | Login, painel, mapa, gráficos, evidências, relatório e roteiro da apresentação |
+Vitor Studzieski responde pelo desenvolvimento, integração e validação de todas as frentes: API, interface, workers e ingestão, MongoDB, infraestrutura, CI e documentação técnica. A divisão de falas e tarefas acadêmicas entre os três integrantes pode ser ajustada pelo grupo, mas não representa donos técnicos separados por diretório.
 
 ## Cronograma
 

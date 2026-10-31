@@ -44,7 +44,7 @@ services:
       MONGO_DB: agropulse
       # Chave temporária apenas para desenvolvimento local. Use .env com um segredo próprio.
       JWT_SECRET: ${JWT_SECRET:-dev-only-local-secret-replace-before-deploy-32chars}
-      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:${WEB_PORT:-3000}}
       READINGS_TTL_DAYS: ${READINGS_TTL_DAYS:-180}
     depends_on:
       mongo-init:
@@ -57,7 +57,7 @@ services:
     build:
       context: ./apps/web
       args:
-        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:${API_PORT:-8000}}
     environment:
       API_INTERNAL_URL: http://api:8000
     depends_on:

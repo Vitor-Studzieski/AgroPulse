@@ -54,7 +54,7 @@ Resuma o custo incremental zero da execução local, o processamento assíncrono
 - Se o mapa não carregar o fundo, confirme a conexão com a internet. Os dados dos talhões ainda podem ser explicados pela lista e pelo GeoJSON.
 - Se o painel climático não tiver dados recentes, mantenha o ano importado selecionado; não crie nem apresente observações sintéticas como se fossem do INMET.
 - Se `/docs` ou os dados do MongoDB não responderem, continue pelo painel e explique que as evidências detalhadas estão em `docs/evidencias/` e `docs/MODELO-DADOS.md`.
-- O CI remoto verde disponível pode pertencer ao commit base. Não o apresente como verificação desta branch até que a versão entregue tenha seu próprio run concluído.
+- Antes da apresentação, consulte o run mais recente do PR #1 e confirme que todos os jobs passaram. A captura 28 registra um run histórico e não substitui o status atual da branch.
 
 ## Fechamento
 
