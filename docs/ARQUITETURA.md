@@ -9,7 +9,7 @@ flowchart LR
     end
     subgraph Dados abertos
         I[INMET<br/>clima horário]
-        G[IBGE / CONAB<br/>produção agrícola]
+        G[IBGE / PAM-SIDRA<br/>produção agrícola]
     end
 
     S -->|insert_many| TS[(sensor_readings<br/>time series)]
