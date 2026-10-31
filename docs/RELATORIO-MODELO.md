@@ -126,7 +126,7 @@ A interface Next.js autentica pela API FastAPI e oferece o painel e os formulár
 
 ## 7. Testes e verificações
 
-Esta seção registra as verificações executadas e as evidências disponíveis. As suítes de API e workers, o build de produção da interface e os manifests/builds locais foram executados. A branch `feature/agropulse-completion` foi publicada. O run #19 do CI no PR #1 passou nos cinco jobs para o commit `7929bb7`; a captura 28 registra o run #11 anterior, também aprovado, no commit `e7b3f94`.
+Esta seção registra as verificações executadas e as evidências disponíveis. As suítes de API e workers, o build de produção da interface e os manifests/builds locais foram executados. A branch `feature/agropulse-completion` foi publicada. O run #21 do CI no PR #1 passou nos cinco jobs para o commit `4fa515e`; a captura 28 registra o run #11 anterior, também aprovado, no commit `e7b3f94`.
 
 | Verificação | Resultado observado | Data / evidência |
 |---|---|---|
@@ -137,7 +137,7 @@ Esta seção registra as verificações executadas e as evidências disponíveis
 | Compose e smoke tests locais | Os três ambientes isolados iniciaram; endpoints de saúde e documentação responderam | Validação local; anexar log/captura |
 | Demonstração em banco vazio | `make demo` em projeto Compose isolado criou seed, 3 talhões e 6 sensores; backfill gerou 12.096 leituras sintéticas de sete dias; importou INMET A763 (8.784 leituras) e PAM/SP (1.556 registros); o rollup criou 24 documentos em `field_daily_stats`. A API autenticada retornou clima 2024 e top 10 do ranking 2023. A segunda execução manteve as contagens, sem backfill duplicado ou resumos diários duplicados. Em revalidação isolada, a stack respondeu no health check e na web e persistiu 12.432 leituras ao vivo/históricas, 24 agregados, 1.556 registros PAM/SP e 8.784 observações INMET/A763. | 2026-10-30 e 2026-10-31; os volumes temporários foram removidos após cada conferência |
 | Fluxo CRUD integrado | Cadastro/login, recursos agrícolas, telemetria simulada, alerta avaliado pelo worker e exclusão da conta temporária concluídos; token revogado retornou 401 | Stack local isolada, 2026-10-30; conta descartável removida, anexar captura se exigida |
-| GitHub Actions remoto | Aprovado em 2026-10-31 nos jobs schema, workers, api, web e compose | Run #19 do PR #1, commit `7929bb7`; cinco jobs aprovados. A captura `28-github-actions-verde.png` registra o run #11 anterior (`e7b3f94`), também aprovado. |
+| GitHub Actions remoto | Aprovado em 2026-10-31 nos jobs schema, workers, api, web e compose | Run #21 do PR #1, commit `4fa515e`; cinco jobs aprovados. A captura `28-github-actions-verde.png` registra o run #11 anterior (`e7b3f94`), também aprovado. |
 
 ## 8. Demonstração
 
@@ -159,7 +159,7 @@ Limitações verificadas ou pendentes de evidência:
 - Na validação descartável sem volume, o ZIP oficial do INMET 2024 foi importado com filtro SP após aplicação de `infra/mongo/02-schema.js`: 40 estações e 351.360 observações. A amostra compacta versionada conserva somente o arquivo oficial da A763/Marília (8.784 leituras). `make demo` a carrega para que a demonstração anual funcione em um clone limpo; a API e o painel mostraram A763 a 27,8 km do campus e a última observação em 31/12/2024 23:00 UTC (20:00 no horário local). Ainda falta anexar a captura acadêmica.
 - A fixture SIDRA oficial de Sorriso (MT), ano 2023, valida leitura e parsing e foi importada em um MongoDB temporário sem volume persistente; foram conferidos três documentos (soja, milho e cana). Repetir ou fotografar essa consulta no ambiente de demonstração do grupo, se exigido.
 - A amostra oficial da PAM/SIDRA 2023 para SP está versionada em `data/imports/pam-sp-2023.csv` e é carregada por `make demo` sem consulta externa. O gerador consultou as APIs oficiais e reproduziu o CSV versionado byte a byte. O importador persistiu 1.556 combinações municipais completas; a API autenticada retornou o top 10 de soja por produtividade e o painel exibiu Pompéia na referência oficial regional. Isso não altera a demonstração espacial, que permanece limitada ao campus e a polígonos sintéticos próximos.
-- A branch pública `feature/agropulse-completion` está no remoto `https://github.com/Vitor-Studzieski/AgroPulse` e o PR #1 está aberto para revisão, sem merge. O run #19 do CI no commit `7929bb7` passou nos cinco jobs; a captura 28 mostra o run #11 anterior, também aprovado. As capturas 15 e 18 foram refeitas no Compass sem erros exploratórios; ainda faltam inserir os RAs e confirmar a data da apresentação para fechar a versão acadêmica final.
+- A branch pública `feature/agropulse-completion` está no remoto `https://github.com/Vitor-Studzieski/AgroPulse` e o PR #1 está aberto para revisão, sem merge. O run #21 do CI no commit `4fa515e` passou nos cinco jobs; a captura 28 mostra o run #11 anterior, também aprovado. As capturas 15 e 18 foram refeitas no Compass sem erros exploratórios; ainda faltam inserir os RAs e confirmar a data da apresentação para fechar a versão acadêmica final.
 
 Como trabalhos futuros, podem ser considerados autenticação de dispositivos e ingestão por gateway, exportação do relatório de safra e avaliação com uma carga de dados maior, preservando os limites financeiros definidos.
 
