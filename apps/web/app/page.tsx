@@ -46,6 +46,19 @@ function dateLabel(value?: string, withTime = false): string {
   if (Number.isNaN(date.getTime())) return "—";
   return new Intl.DateTimeFormat("pt-BR", withTime ? { dateStyle: "short", timeStyle: "short" } : { dateStyle: "short" }).format(date);
 }
+// O prazo local controla a interface; a API continua responsável por validar assinatura e acesso.
+function tokenExpirationMs(token: string): number | null {
+  const payload = token.split(".")[1];
+  if (!payload) return null;
+  try {
+    const base64 = payload.replace(/-/g, "+").replace(/_/g, "/");
+    const decoded = window.atob(base64.padEnd(Math.ceil(base64.length / 4) * 4, "="));
+    const claims: { exp?: unknown } = JSON.parse(decoded);
+    return typeof claims.exp === "number" && Number.isFinite(claims.exp) ? claims.exp * 1000 : null;
+  } catch {
+    return null;
+  }
+}
 function formatNumber(value: number, fraction = 0): string {
   return new Intl.NumberFormat("pt-BR", { maximumFractionDigits: fraction, minimumFractionDigits: fraction }).format(value);
 }
@@ -399,6 +412,38 @@ export default function Home() {
     window.addEventListener("agropulse:unauthorized", handleUnauthorized);
     return () => window.removeEventListener("agropulse:unauthorized", handleUnauthorized);
   }, [logout]);
+
+  useEffect(() => {
+    if (!token) return;
+    const expiresAt = tokenExpirationMs(token);
+    if (expiresAt === null) return;
+
+    let timer: number | undefined;
+    const checkExpiration = () => {
+      if (timer !== undefined) {
+        window.clearTimeout(timer);
+        timer = undefined;
+      }
+      if (window.localStorage.getItem("agropulse_token") !== token) return;
+      const remaining = expiresAt - Date.now();
+      if (remaining <= 0) {
+        setSessionExpired(true);
+        logout();
+        return;
+      }
+      timer = window.setTimeout(checkExpiration, Math.min(remaining, 60_000));
+    };
+    const checkWhenVisible = () => {
+      if (document.visibilityState === "visible") checkExpiration();
+    };
+
+    checkExpiration();
+    document.addEventListener("visibilitychange", checkWhenVisible);
+    return () => {
+      if (timer !== undefined) window.clearTimeout(timer);
+      document.removeEventListener("visibilitychange", checkWhenVisible);
+    };
+  }, [token, logout]);
 
   const updateAccount = async (body: AccountUpdate) => {
     if (!token) return;
