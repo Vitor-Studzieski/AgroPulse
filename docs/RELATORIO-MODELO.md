@@ -138,7 +138,7 @@ Esta seção registra as verificações executadas e as evidências disponíveis
 | Demonstração em banco vazio | `make demo` em projeto Compose isolado criou seed, 3 talhões e 6 sensores; backfill gerou 12.096 leituras sintéticas de sete dias; importou INMET A763 (8.784 leituras) e PAM/SP (1.556 registros); o rollup criou 24 documentos em `field_daily_stats`. A API autenticada retornou clima 2024 e top 10 do ranking 2023. A segunda execução ignorou o backfill existente e não duplicou os resumos diários; a contagem observada após a simulação ao vivo foi 12.840 leituras. | 2026-10-31; o projeto e volume temporários foram removidos após a conferência |
 | Fluxo CRUD integrado | Conta sintética criada e atualizada; fazenda, talhão, safra, operação, sensor e regra exercitados por API; worker gerou alerta a partir de leituras existentes, API resolveu e removeu o evento | Stack local isolada em 2026-10-31; conta e dados descartáveis removidos após a validação |
 | Telemetria, clima, produção e alerta em fluxo integrado | `make demo` em um projeto Compose isolado novo: 12.096 leituras de backfill; 8.784 observações INMET 2024; 1.556 registros IBGE/PAM 2023; 24 resumos. Uma conta aleatória temporária percorreu CRUD autenticado de fazenda, talhão GeoJSON, safra, operação, sensor e regra; a área e o centroide foram calculados. O simulador forneceu leitura ao vivo; série horária, clima anual e ranking de 10 municípios responderam; o worker gerou alerta com webhook vazio. | 2026-11-01; conta, containers e volume temporários removidos; stack principal preservada |
-| GitHub Actions remoto | Cinco jobs: schema, workers, API, web e Compose | Consulte o status do HEAD atual no PR #1. A captura 28 registra visualmente o run #23 de um commit anterior e é apenas histórica. |
+| GitHub Actions remoto | Cinco jobs: schema, workers, API, web e Compose aprovados | Run [#47](https://github.com/Vitor-Studzieski/AgroPulse/actions/runs/41283798747) do commit `5924fb8`, em 2026-11-01. A captura 28 registra visualmente o run #23 de um commit anterior e é apenas histórica. |
 
 ## 8. Demonstração
 
@@ -149,6 +149,8 @@ Esta seção registra as verificações executadas e as evidências disponíveis
 5. Mostre uma regra e um alerta gerado pelo worker; sem webhook, a entrega de demonstração aparece no log.
 6. No MongoDB Compass, mostre coleções, time series, índices, validação e agregação diária.
 7. Mantenha o ambiente local como plano para a apresentação. A stack, o seed e o ranking ficam no computador; sem internet, os tiles do OpenStreetMap podem não carregar o fundo cartográfico.
+
+O vídeo de contingência disponível é uma montagem silenciosa de 26,8 segundos com telas da interface local. A gravação contínua da demonstração ainda não foi produzida.
 
 ## 9. Custo, limitações e trabalhos futuros
 
