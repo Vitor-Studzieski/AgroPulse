@@ -20,7 +20,7 @@ O guia foi importado com as frentes distribuídas por diretório. O status funci
 
 A correspondência entre os requisitos RF01–RF10, código, verificações e pendências está em [docs/REQUISITOS.md](REQUISITOS.md).
 
-O [modelo de relatório técnico](RELATORIO-MODELO.md) já traz a estrutura do capítulo 14, as Figuras 1–3 extraídas do guia e os 28 nomes previstos para as capturas. As imagens em [docs/figuras/guia](figuras/guia/) são referências de arquitetura, não evidência de execução. Os nomes informados — Vitor Studzieski, Maria Fernanda Passos e Lauan Alves Ferneda — já constam na capa; faltam os RAs e a data da apresentação. O remoto público está registrado no relatório e a branch `feature/agropulse-completion` está publicada no PR #1, que permanece aberto. A pasta [docs/evidencias](evidencias/) contém os 28 arquivos numerados, revisados como finais. As capturas 15 e 18 foram refeitas no Compass sem erros exploratórios; `painel-visao-geral.png` é complementar. O [vídeo silencioso de contingência](apresentacao/demonstracao-agropulse.mp4) tem 26,8 segundos e é uma montagem de capturas da interface local no Chrome; a gravação contínua autorizada ainda está pendente.
+O [modelo de relatório técnico](RELATORIO-MODELO.md) já traz a estrutura do capítulo 14, as Figuras 1–3 extraídas do guia e os 28 nomes previstos para as capturas. As imagens em [docs/figuras/guia](figuras/guia/) são referências de arquitetura, não evidência de execução. Os nomes informados — Vitor Studzieski, Maria Fernanda Passos e Lauan Alves Ferneda — já constam na capa; faltam os RAs. A data da apresentação pode ser acrescentada ao roteiro quando definida. O remoto público está registrado no relatório e a branch `feature/agropulse-completion` está publicada no PR #1, que permanece aberto. A pasta [docs/evidencias](evidencias/) contém os 28 arquivos numerados, revisados como finais. As capturas 15 e 18 foram refeitas no Compass sem erros exploratórios; `painel-visao-geral.png` é complementar. O [vídeo silencioso de demonstração](apresentacao/demonstracao-agropulse.mp4) é uma gravação contínua de 44 segundos da aba local no Chrome; trechos da visão geral, do mapa de talhões e dos sensores foram conferidos.
 
 O [roteiro de apresentação](ROTEIRO-APRESENTACAO.md) organiza a demonstração local, reforça o recorte geográfico único do campus e lista os cuidados para não misturar dados sintéticos com fontes oficiais.
 
@@ -33,7 +33,7 @@ O [roteiro de apresentação](ROTEIRO-APRESENTACAO.md) organiza a demonstração
 | Prints da base de dados | Compass ou mongosh: coleções, documentos, `getCollectionInfos` da time series, `explain`, falha de validação (veja `docs/MODELO-DADOS.md`) |
 | Link do GitHub | Repositório público ou com acesso para o professor |
 | Identificação dos integrantes | Nome e RA de cada integrante na capa do relatório |
-| Vídeo de contingência | [MP4 silencioso de 26,8 segundos](apresentacao/demonstracao-agropulse.mp4), montagem com a interface local e os módulos principais; gravação contínua ainda pendente |
+| Vídeo de contingência | [MP4 silencioso de 44 segundos](apresentacao/demonstracao-agropulse.mp4), gravação contínua da aba local no Chrome; mostra trechos da visão geral, mapa de talhões e sensores |
 
 Tire os prints durante o desenvolvimento, não no último dia.
 

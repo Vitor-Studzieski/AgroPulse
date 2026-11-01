@@ -18,7 +18,7 @@ O AgroPulse reúne cadastro rural, telemetria, alertas e contexto climático e p
 
 ## Vídeo curto de contingência
 
-O [vídeo de demonstração](apresentacao/demonstracao-agropulse.mp4) está pronto para uso offline. É uma montagem silenciosa de 26,8 segundos, 1080p, feita com capturas da interface local aberta no Chrome: visão geral, talhões, sensores, regras de alerta e painéis do INMET e da PAM/SIDRA. Os quadros não mostram credenciais. A gravação contínua local autorizada ainda está pendente; até ela ser produzida e conferida, use esta montagem como contingência visual. A apresentação principal continua sendo a demonstração interativa da stack local.
+O [vídeo de demonstração](apresentacao/demonstracao-agropulse.mp4) está pronto para uso offline. É uma gravação contínua e silenciosa de 44 segundos da aba local do AgroPulse no Chrome, codificada em H.264 e 1920 × 972. Os trechos verificados mostram a visão geral, o mapa de talhões e os sensores, sem credenciais nem elementos de outras aplicações. Alertas são mostrados na captura 08 e na demonstração interativa. A apresentação principal continua sendo a demonstração da stack local.
 
 ## Divisão de falas em 12 minutos
 
