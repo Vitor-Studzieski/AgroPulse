@@ -9,11 +9,9 @@
 | Instituição | Fatec Pompéia — Shunji Nishimura |
 | Disciplina | IAL-215 — Banco de Dados NoSQL |
 | Projeto | AgroPulse — plataforma de monitoramento de safra |
-| Professor(a) | [preencher] |
 | Integrantes | Vitor Studzieski (RA pendente), Maria Fernanda Passos (RA pendente) e Lauan Alves Ferneda (RA pendente) |
 | Repositório (branch de entrega) | [AgroPulse — feature/agropulse-completion](https://github.com/Vitor-Studzieski/AgroPulse/tree/feature/agropulse-completion) |
 | Pull request para revisão | [PR #1](https://github.com/Vitor-Studzieski/AgroPulse/pull/1) — aberto, sem merge |
-| Data da apresentação | [pendente] |
 
 ## Resumo
 
@@ -161,13 +159,13 @@ Limitações verificadas ou pendentes de evidência:
 - Na validação descartável sem volume, o ZIP oficial do INMET 2024 foi importado com filtro SP após aplicação de `infra/mongo/02-schema.js`: 40 estações e 351.360 observações. A amostra compacta versionada conserva somente o arquivo oficial da A763/Marília (8.784 leituras). `make demo` a carrega para que a demonstração anual funcione em um clone limpo; a API e o painel mostraram A763 a 27,8 km do campus e a última observação em 31/12/2024 23:00 UTC (20:00 no horário local). A imagem complementar `docs/evidencias/painel-visao-geral.png` registra o cartão de clima com o ano 2024, a estação e a última observação às 20:00 no horário local.
 - A fixture SIDRA oficial de Sorriso (MT), ano 2023, valida leitura e parsing e foi importada em um MongoDB temporário sem volume persistente; foram conferidos três documentos (soja, milho e cana). Repetir ou fotografar essa consulta no ambiente de demonstração do grupo, se exigido.
 - A amostra oficial da PAM/SIDRA 2023 para SP está versionada em `data/imports/pam-sp-2023.csv` e é carregada por `make demo` sem consulta externa. O gerador consultou as APIs oficiais e reproduziu o CSV versionado byte a byte. O importador persistiu 1.556 combinações municipais completas; a API autenticada retornou o top 10 de soja por produtividade e o painel exibiu Pompéia na referência oficial regional. Isso não altera a demonstração espacial, que permanece limitada ao campus e a polígonos sintéticos próximos.
-- A branch pública `feature/agropulse-completion` está no remoto `https://github.com/Vitor-Studzieski/AgroPulse` e o PR #1 está aberto para revisão, sem merge. Consulte o próprio PR para conferir o CI mais recente. Ainda faltam inserir os RAs e confirmar a data da apresentação para fechar a versão acadêmica final.
+- A branch pública `feature/agropulse-completion` está no remoto `https://github.com/Vitor-Studzieski/AgroPulse` e o PR #1 está aberto para revisão, sem merge. Consulte o próprio PR para conferir o CI mais recente. Ainda faltam inserir os RAs obrigatórios dos integrantes para finalizar a capa acadêmica.
 
 Como trabalhos futuros, podem ser considerados autenticação de dispositivos e ingestão por gateway, exportação do relatório de safra e avaliação com uma carga de dados maior, preservando os limites financeiros definidos.
 
 ## 10. Conclusão
 
-O AgroPulse reúne CRUD agrícola, persistência MongoDB, telemetria, geodados, análises e workers em uma solução local reproduzível. A conclusão acadêmica depende de executar o roteiro, completar os RAs e confirmar a data da apresentação.
+O AgroPulse reúne CRUD agrícola, persistência MongoDB, telemetria, geodados, análises e workers em uma solução local reproduzível. Antes da entrega, complete os RAs dos integrantes na capa e ensaie o roteiro de demonstração.
 
 ## Referências
 

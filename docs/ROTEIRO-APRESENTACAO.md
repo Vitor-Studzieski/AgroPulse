@@ -52,7 +52,7 @@ Se precisarem criar ou editar dados ao vivo, use uma cópia descartável da stac
 
 ### Fala de 1 minuto: conclusão
 
-Resuma o custo incremental zero da execução local, o processamento assíncrono e as limitações: polígonos sintéticos e clima medido na estação próxima, que não representa medições dentro do campus. A demonstração não depende de hospedagem externa; as capturas reais estão em `docs/evidencias/`. Cite como próximos passos inserir os RAs e confirmar a data da apresentação.
+Resuma o custo incremental zero da execução local, o processamento assíncrono e as limitações: polígonos sintéticos e clima medido na estação próxima, que não representa medições dentro do campus. A demonstração não depende de hospedagem externa; as capturas reais estão em `docs/evidencias/`. Como trabalhos futuros, cite a autenticação dedicada de dispositivos, a ingestão por gateway e a avaliação com uma carga de dados maior.
 
 ## Se algo falhar
 
