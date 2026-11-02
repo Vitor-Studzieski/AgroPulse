@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { apiFetch, ProductionRankingRow, WeatherHistory } from "@/lib/api";
+import { apiFetch, detailOf, ProductionRankingRow, WeatherHistory } from "@/lib/api";
 
 const supportedCrops = ["soja", "milho", "cana"] as const;
 type SupportedCrop = (typeof supportedCrops)[number];
@@ -39,7 +39,7 @@ export function WeatherPanel({ token, fieldId }: { token: string; fieldId: strin
     setError("");
     apiFetch<WeatherHistory>(`/analytics/fields/${encodeURIComponent(fieldId)}/weather?days=30`, token)
       .then((result) => { if (active) setHistory(result); })
-      .catch(() => { if (active) setError("Não foi possível carregar os dados climáticos agora."); })
+      .catch((caught) => { if (active) setError(detailOf(caught)); })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
   }, [fieldId, token, retry]);
@@ -103,7 +103,7 @@ export function ProductionRankingPanel({ token, crop: fieldCrop, state, municipa
     if (state) query.set("state", state);
     apiFetch<ProductionRankingRow[]>(`/analytics/production/ranking?${query}`, token)
       .then((result) => { if (active) setRows(result); })
-      .catch(() => { if (active) setError("Não foi possível carregar o ranking de produtividade agora."); })
+      .catch((caught) => { if (active) setError(detailOf(caught)); })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
   }, [crop, state, token, retry]);
