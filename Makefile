@@ -1,4 +1,4 @@
-.PHONY: setup up demo down reset seed api-seed workers-seed logs test import-inmet import-ibge rollup web-dev api-dev workers-dev
+.PHONY: setup up demo down reset seed api-seed workers-seed logs test test-setup import-inmet import-ibge rollup web-dev api-dev workers-dev
 
 setup:
 	cp -n .env.example .env || true
@@ -33,9 +33,17 @@ workers-seed:
 logs:
 	docker compose logs -f api simulator alerts
 
-test:
-	cd apps/api && pytest -q
-	cd apps/workers && pytest -q
+test-setup:
+	test -x apps/api/.venv/bin/python || uv venv --python 3.12 apps/api/.venv
+	apps/api/.venv/bin/python -c 'import sys; assert sys.version_info[:2] == (3, 12), "apps/api/.venv precisa usar Python 3.12"'
+	uv pip install --python apps/api/.venv/bin/python --require-hashes -r apps/api/requirements-dev.lock
+	test -x apps/workers/.venv/bin/python || uv venv --python 3.12 apps/workers/.venv
+	apps/workers/.venv/bin/python -c 'import sys; assert sys.version_info[:2] == (3, 12), "apps/workers/.venv precisa usar Python 3.12"'
+	uv pip install --python apps/workers/.venv/bin/python --require-hashes -r apps/workers/requirements-dev.lock
+
+test: test-setup
+	cd apps/api && .venv/bin/ruff check . && .venv/bin/pytest -q
+	cd apps/workers && .venv/bin/ruff check . && .venv/bin/pytest -q
 
 web-dev:
 	docker compose -p agropulse-web -f docker-compose.web.yml up --build

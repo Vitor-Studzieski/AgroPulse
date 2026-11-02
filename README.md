@@ -82,19 +82,7 @@ Os arquivos `data/imports/pam-sp-2023.csv` e `data/imports/inmet-sp-a763-2024.zi
 
 As versões diretas ficam fixadas em `apps/api/requirements.txt` e `apps/workers/requirements.txt`. Os arquivos `requirements*.lock` registram também as dependências transitivas e os hashes para Python 3.12. Docker e CI instalam esses locks sem precisar de serviço pago. Ao atualizar uma dependência, ajuste a versão direta e regenere os locks conforme os comandos em [docs/REQUISITOS.md](docs/REQUISITOS.md#verificações-locais-concluídas).
 
-Para rodar Ruff e pytest localmente em macOS/Linux, instale `uv`; ele pode obter o Python 3.12 se ainda não estiver instalado. API e workers usam ambientes separados:
-
-```bash
-uv venv --python 3.12 apps/api/.venv
-uv pip install --python apps/api/.venv/bin/python --require-hashes -r apps/api/requirements-dev.lock
-uv venv --python 3.12 apps/workers/.venv
-uv pip install --python apps/workers/.venv/bin/python --require-hashes -r apps/workers/requirements-dev.lock
-
-(cd apps/api && .venv/bin/ruff check . && .venv/bin/pytest -q)
-(cd apps/workers && .venv/bin/ruff check . && .venv/bin/pytest -q)
-```
-
-Os ambientes `.venv` ficam fora do Git. A demonstração e o CI continuam disponíveis sem instalar Python no host.
+Para rodar Ruff e pytest localmente em macOS/Linux, instale `uv` e execute `make test`. O alvo cria ambientes Python 3.12 separados para API e workers, instala os locks de desenvolvimento exigindo hashes e roda as duas suítes. A primeira execução pode baixar o Python e os pacotes gratuitos do PyPI; não altera o Python global. `make test-setup` prepara os ambientes sem executar os testes. As pastas `.venv` ficam fora do Git. A demonstração Docker e o CI não dependem desses ambientes locais.
 
 ## Estrutura
 
