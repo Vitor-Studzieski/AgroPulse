@@ -4,7 +4,7 @@ Prazo de entrega: **16/11/2026**. A data da apresentação no laboratório deve 
 
 ## Responsabilidade pelo projeto
 
-Vitor Studzieski responde pelo desenvolvimento, integração e validação de todas as frentes: API, interface, workers e ingestão, MongoDB, infraestrutura, CI e documentação técnica. A divisão de falas e tarefas acadêmicas entre os três integrantes pode ser ajustada pelo grupo, mas não representa donos técnicos separados por diretório.
+Vitor Studzieski é responsável pelo resultado integral do projeto e coordena todas as frentes técnicas e entregas acadêmicas: código, integração, validação, infraestrutura, CI, evidências, relatório e apresentação. O grupo pode combinar a divisão das falas, mas a responsabilidade final permanece com Vitor; não há donos técnicos separados por diretório.
 
 ## Cronograma
 
