@@ -1,0 +1,79 @@
+name: agropulse-workers
+
+services:
+  mongo:
+    image: mongo:7
+    command: ["--replSet", "rs0", "--bind_ip_all"]
+    ports:
+      - "127.0.0.1:${WORKERS_MONGO_PORT:-27019}:27017"
+    volumes:
+      - workers_mongo_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  mongo-init:
+    image: mongo:7
+    depends_on:
+      mongo:
+        condition: service_healthy
+    volumes:
+      - ./infra/mongo:/scripts:ro
+    environment:
+      READINGS_TTL_DAYS: ${READINGS_TTL_DAYS:-180}
+    entrypoint:
+      - sh
+      - -c
+      - >
+        mongosh --host mongo --quiet --file /scripts/01-replica-set.js &&
+        mongosh "mongodb://mongo:27017/agropulse?replicaSet=rs0" --quiet
+        --eval "var READINGS_TTL_DAYS = Number('$${READINGS_TTL_DAYS:-180}')"
+        --file /scripts/02-schema.js &&
+        mongosh "mongodb://mongo:27017/agropulse?replicaSet=rs0" --quiet
+        --eval "var EXPECTED_READINGS_TTL_DAYS = Number('$${READINGS_TTL_DAYS:-180}')"
+        --file /scripts/03-verify-schema.js
+    restart: "no"
+
+  demo-seed:
+    build: ./apps/api
+    command: ["python", "-m", "app.seed", "--fields", "3", "--sensors-per-field", "2"]
+    environment:
+      MONGO_URI: mongodb://mongo:27017/?replicaSet=rs0
+      MONGO_DB: agropulse
+    depends_on:
+      mongo-init:
+        condition: service_completed_successfully
+    restart: "no"
+
+  simulator:
+    build: ./apps/workers
+    command: ["python", "-m", "workers.simulator", "--live"]
+    volumes:
+      - ./data/imports:/imports:ro
+    environment:
+      MONGO_URI: mongodb://mongo:27017/?replicaSet=rs0
+      MONGO_DB: agropulse
+      SIM_INTERVAL_SECONDS: ${SIM_INTERVAL_SECONDS:-60}
+    depends_on:
+      demo-seed:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  alerts:
+    build: ./apps/workers
+    command: ["python", "-m", "workers.alerts"]
+    environment:
+      MONGO_URI: mongodb://mongo:27017/?replicaSet=rs0
+      MONGO_DB: agropulse
+      ALERT_WEBHOOK_URL: ${ALERT_WEBHOOK_URL:-}
+      ALERT_EVAL_SECONDS: ${ALERT_EVAL_SECONDS:-60}
+    depends_on:
+      demo-seed:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+volumes:
+  workers_mongo_data:

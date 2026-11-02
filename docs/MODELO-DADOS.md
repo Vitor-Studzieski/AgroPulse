@@ -12,13 +12,17 @@ Banco: `agropulse`. O schema é criado por `infra/mongo/02-schema.js`.
 | `seasons` | comum + validação | Safras por talhão | `field_id,label` |
 | `operations` | comum + validação | Plantio, adubação, aplicação, irrigação, colheita; `details` varia por tipo | `field_id,date`; `season_id` |
 | `sensors` | comum + validação | Dispositivos | `device_id` único; `field_id` |
-| `sensor_readings` | **time series** (minutos, TTL 180 d) | Umidade, temperatura e chuva | `meta.field_id,ts`; `meta.sensor_id,ts` |
+| `sensor_readings` | **time series** (minutos, TTL configurável: 180 d local, 30 d produção) | Umidade, temperatura e chuva | `meta.field_id,ts`; `meta.sensor_id,ts` |
 | `weather_stations` | comum | Estações INMET | `code` único; `location` 2dsphere |
 | `weather_hourly` | **time series** (horas) | Clima horário INMET | `station.code,ts` |
 | `ibge_production` | comum | Produção agrícola municipal | `ibge_code,crop,year` único; `crop,year,yield_kg_ha` |
 | `field_daily_stats` | comum (alvo de `$merge`) | Resumo por talhão e dia | `field_id,day` único |
 | `alert_rules` | comum + validação | Regras (métrica, operador, limiar, janela) | `active,field_id` |
-| `alerts` | comum + validação | Alertas abertos e resolvidos | `field_id,triggered_at`; `rule_id,status` |
+| `alerts` | comum + validação | Alertas abertos e resolvidos, estado de entrega opcional | `field_id,triggered_at`; `rule_id,status` |
+
+O endpoint de talhões valida coordenadas WGS84, exige anéis fechados, rejeita cruzamentos e anéis internos fora ou sobrepostos ao contorno externo, e requer área líquida positiva. `area_ha` desconta os anéis internos e o centroide é ponderado pela área; ambos usam uma projeção local aproximada adequada a talhões agrícolas. A geometria original permanece em GeoJSON.
+
+O seed de apresentação usa como referência única o campus da Fatec Pompéia (latitude `-22.1110`, longitude `-50.1994`). Os pequenos polígonos gerados ao redor do ponto são sintéticos e servem apenas para demonstrar o mapa; não são levantamento, limite cadastral nem afirmação de que exista um talhão agrícola no campus. O mock da interface mostra a estação automática do INMET em Marília (A763), a aproximadamente 27,8 km; ele não inventa observações climáticas quando nenhum histórico oficial foi importado.
 
 ## Exemplos de documentos
 
@@ -42,12 +46,34 @@ Banco: `agropulse`. O schema é criado por `infra/mongo/02-schema.js`.
   "farm_id": "ObjectId",
   "name": "Talhão 001",
   "crop": "soja",
-  "area_ha": 100.02,
-  "boundary": { "type": "Polygon", "coordinates": [[[-55.73, -12.55], [-55.71, -12.55], [-55.71, -12.53], [-55.73, -12.53], [-55.73, -12.55]]] },
-  "centroid": { "type": "Point", "coordinates": [-55.72, -12.54] },
-  "attributes": { "solo": "latossolo", "irrigado": true }
+  "area_ha": 1.0,
+  "boundary": { "type": "Polygon", "coordinates": [[[-50.199884, -22.111452], [-50.198916, -22.111452], [-50.198916, -22.110548], [-50.199884, -22.110548], [-50.199884, -22.111452]]] },
+  "centroid": { "type": "Point", "coordinates": [-50.1994, -22.111] },
+  "attributes": { "origem": "sintética", "uso": "demonstração" }
 }
 ```
+
+## Fluxos da API
+
+Todos os endpoints abaixo, exceto cadastro e login, exigem `Authorization: Bearer <token>`. O contrato completo e os schemas de requisição e resposta ficam disponíveis em `/docs`.
+
+Nos `PATCH`, a API rejeita `null` explícito para campos obrigatórios, em vez de ignorar a alteração e responder sucesso. Campos opcionais que podem ser limpos — como a data de colheita, as produtividades, o custo e o vínculo de safra da operação — aceitam `null`.
+
+| Método e rota | Uso |
+|---|---|
+| `POST /auth/register`, `POST /auth/login`, `GET /auth/me` | Criar conta, autenticar e consultar o perfil |
+| `PATCH /auth/me` | Alterar nome, e-mail e/ou senha; exige `current_password` |
+| `DELETE /auth/me` | Excluir conta e dados vinculados; exige confirmação pela senha atual |
+| `/farms`, `/fields`, `/seasons`, `/operations`, `/sensors`, `/alert-rules`, `/alerts` | CRUD dos recursos pertencentes ao usuário autenticado |
+| `GET /analytics/fields/{id}/series` | Série horária ou diária de uma métrica do talhão |
+| `GET /analytics/fields/{id}/weather` | Últimos dias ou ano-calendário completo da estação INMET mais próxima em até 100 km; resposta lista os anos importados |
+| `GET /analytics/production/ranking` | Ranking municipal IBGE; escolhe o ano mais recente se `year` for omitido |
+
+Excluir uma conta, fazenda ou talhão remove os registros dependentes por `field_id`. Leituras em `sensor_readings` são removidas por `meta.field_id`; o TTL continua limitando a retenção normal dos dados brutos.
+
+O seed é idempotente para a conta, fazenda, talhões, sensores e regras de demonstração: uma execução seguinte alinha a fazenda e as geometrias geradas à referência do campus, repara sensores ou regras ausentes e preserva leituras e operações já registradas. Ele aceita `--fields` e `--sensors-per-field`, ambos positivos.
+
+Em `alerts`, `notification_claimed_at` é uma concessão temporária do worker e `notified_at` indica uma entrega concluída (ou apenas registrada em log quando não há webhook configurado). Uma falha no webhook libera o alerta para nova tentativa; essas datas são campos operacionais opcionais.
 
 ## Consultas para o relatório
 
@@ -58,9 +84,9 @@ db.sensor_readings.countDocuments()
 
 db.getCollectionInfos({ name: "sensor_readings" })
 
-db.fields.find({ boundary: { $geoIntersects: { $geometry: { type: "Point", coordinates: [-55.72, -12.54] } } } })
+db.fields.find({ boundary: { $geoIntersects: { $geometry: { type: "Point", coordinates: [-50.1994, -22.1110] } } } })
 
-db.weather_stations.find({ location: { $near: { $geometry: { type: "Point", coordinates: [-55.72, -12.54] }, $maxDistance: 100000 } } })
+db.weather_stations.find({ location: { $near: { $geometry: { type: "Point", coordinates: [-50.1994, -22.1110] }, $maxDistance: 100000 } } })
 
 db.sensor_readings.aggregate([
   { $match: { ts: { $gte: new Date(Date.now() - 7 * 864e5) } } },
@@ -68,9 +94,11 @@ db.sensor_readings.aggregate([
   { $sort: { "_id.day": 1 } }
 ])
 
-db.fields.explain("executionStats").find({ crop: "soja" })
+db.fields.find({ crop: "soja" }).hint({ crop: 1 }).explain("executionStats").queryPlanner.winningPlan
 
 ```
+
+O `hint` torna a demonstração do `IXSCAN` reproduzível com os três talhões pequenos do seed; sem ele, o otimizador pode escolher `COLLSCAN` para uma coleção tão pequena.
 
 Teste de validação (deve falhar):
 

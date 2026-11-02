@@ -19,7 +19,9 @@ def test_token_roundtrip():
 
 
 def test_token_with_wrong_signature_is_rejected():
-    forged = jwt.encode({"sub": "abc"}, "outra-chave", algorithm="HS256")
+    forged = jwt.encode(
+        {"sub": "abc"}, "outra-chave-de-teste-com-mais-de-32-bytes", algorithm="HS256"
+    )
     with pytest.raises(jwt.PyJWTError):
         decode_token(forged)
 

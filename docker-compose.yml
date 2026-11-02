@@ -5,7 +5,7 @@ services:
     image: mongo:7
     command: ["--replSet", "rs0", "--bind_ip_all"]
     ports:
-      - "27017:27017"
+      - "127.0.0.1:${MONGO_PORT:-27017}:27017"
     volumes:
       - mongo_data:/data/db
     healthcheck:
@@ -22,12 +22,19 @@ services:
         condition: service_healthy
     volumes:
       - ./infra/mongo:/scripts:ro
+    environment:
+      READINGS_TTL_DAYS: ${READINGS_TTL_DAYS:-180}
     entrypoint:
       - sh
       - -c
       - >
         mongosh --host mongo --quiet --file /scripts/01-replica-set.js &&
-        mongosh "mongodb://mongo:27017/agropulse?replicaSet=rs0" --quiet --file /scripts/02-schema.js
+        mongosh "mongodb://mongo:27017/agropulse?replicaSet=rs0" --quiet
+        --eval "var READINGS_TTL_DAYS = Number('$${READINGS_TTL_DAYS:-180}')"
+        --file /scripts/02-schema.js &&
+        mongosh "mongodb://mongo:27017/agropulse?replicaSet=rs0" --quiet
+        --eval "var EXPECTED_READINGS_TTL_DAYS = Number('$${READINGS_TTL_DAYS:-180}')"
+        --file /scripts/03-verify-schema.js
     restart: "no"
 
   api:
@@ -35,31 +42,35 @@ services:
     environment:
       MONGO_URI: mongodb://mongo:27017/?replicaSet=rs0
       MONGO_DB: agropulse
-      JWT_SECRET: ${JWT_SECRET:-troque-esta-chave}
-      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
+      # Chave temporária apenas para desenvolvimento local. Use .env com um segredo próprio.
+      JWT_SECRET: ${JWT_SECRET:-dev-only-local-secret-replace-before-deploy-32chars}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:${WEB_PORT:-3000}}
+      READINGS_TTL_DAYS: ${READINGS_TTL_DAYS:-180}
     depends_on:
       mongo-init:
         condition: service_completed_successfully
     ports:
-      - "8000:8000"
+      - "127.0.0.1:${API_PORT:-8000}:8000"
     restart: unless-stopped
 
   web:
     build:
       context: ./apps/web
       args:
-        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:${API_PORT:-8000}}
     environment:
       API_INTERNAL_URL: http://api:8000
     depends_on:
       - api
     ports:
-      - "3000:3000"
+      - "127.0.0.1:${WEB_PORT:-3000}:3000"
     restart: unless-stopped
 
   simulator:
     build: ./apps/workers
     command: ["python", "-m", "workers.simulator", "--backfill-days", "7", "--live"]
+    volumes:
+      - ./data/imports:/imports:ro
     environment:
       MONGO_URI: mongodb://mongo:27017/?replicaSet=rs0
       MONGO_DB: agropulse
@@ -82,11 +93,22 @@ services:
         condition: service_completed_successfully
     restart: unless-stopped
 
+  rollup:
+    build: ./apps/workers
+    command: ["sh", "-c", "sleep 86400; while true; do python -m workers.rollup --days 8; sleep 86400; done"]
+    environment:
+      MONGO_URI: mongodb://mongo:27017/?replicaSet=rs0
+      MONGO_DB: agropulse
+    depends_on:
+      mongo-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
   n8n:
     image: n8nio/n8n:latest
     profiles: ["automation"]
     ports:
-      - "5678:5678"
+      - "127.0.0.1:${N8N_PORT:-5678}:5678"
     volumes:
       - n8n_data:/home/node/.n8n
     restart: unless-stopped

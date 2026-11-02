@@ -2,33 +2,27 @@
 
 Prazo de entrega: **16/11/2026**. A data da apresentação no laboratório deve ser confirmada com o professor.
 
-## Divisão sugerida para 4 integrantes
+## Responsabilidade pelo projeto
 
-| Integrante | Foco | Entregas |
-|---|---|---|
-| 1 | Infra e banco | Compose, schema, índices, seed, importador INMET, rollup |
-| 2 | API | Rotas de `seasons`, `operations`, `sensors` e `alert_rules` seguindo o padrão de `farms`/`fields`; testes |
-| 3 | Front | Login, lista de fazendas e talhões, mapa Leaflet com polígonos, gráficos de série |
-| 4 | Dados e relatório | Importação IBGE/CONAB, consultas de agregação, prints, relatório, roteiro da apresentação |
+Vitor Studzieski é responsável pelo resultado integral do projeto e coordena todas as frentes técnicas e entregas acadêmicas: código, integração, validação, infraestrutura, CI, evidências, relatório e apresentação. O grupo pode combinar a divisão das falas, mas a responsabilidade final permanece com Vitor; não há donos técnicos separados por diretório.
 
 ## Cronograma
 
 | Período | Meta |
 |---|---|
-| 29/10 a 04/11 | `make up` funcionando para todos. CRUD completo de fazendas, talhões, safras e operações. Login no front |
+| 29/10 a 04/11 | `make demo` funcionando em um comando para todos. CRUD completo de fazendas, talhões, safras e operações. Login no front |
 | 05/11 a 11/11 | Mapa com talhões, gráficos de telemetria, importação INMET, rollup, alertas funcionando |
 | 12/11 a 16/11 | Congelar funcionalidades. Prints, relatório, ensaio da apresentação, envio por e-mail |
 
-## O que já está pronto no repositório
+## Status de implementação
 
-CRUD de fazendas e talhões, autenticação, leitura de telemetria, quatro agregações, simulador, alertas com change stream, importador INMET, rollup com `$merge`, schema com validação e índices, CI.
+O guia foi importado com as frentes distribuídas por diretório. O status funcional atual pode ser conferido pela OpenAPI em `/docs`, pelo painel Next.js e pela suíte de CI. A data e o ensaio da apresentação dependem do grupo.
 
-## O que falta implementar
+A correspondência entre os requisitos RF01–RF10, código, verificações e pendências está em [docs/REQUISITOS.md](REQUISITOS.md).
 
-- Rotas de `seasons`, `operations`, `sensors` e `alert_rules` (as coleções e validações já existem).
-- Importador de produção agrícola do IBGE para `ibge_production` (SIDRA, tabela de produção agrícola municipal).
-- Telas do front além da página inicial.
-- Testes de integração da API contra um MongoDB real.
+O [modelo de relatório técnico](RELATORIO-MODELO.md) traz a estrutura do capítulo 14, as Figuras 1–3 extraídas do guia e os 28 nomes previstos para as capturas. As imagens em [docs/figuras/guia](figuras/guia/) são referências de arquitetura, não evidência de execução. Os nomes informados — Vitor Studzieski, Maria Fernanda Passos e Lauan Alves Ferneda — constam na capa. A capa lista os nomes sem números de matrícula, conforme decisão do grupo. A data da apresentação pode ser acrescentada ao roteiro quando definida. O remoto público está registrado no relatório e a branch `feature/agropulse-completion` está publicada no PR #1, que permanece aberto. A pasta [docs/evidencias](evidencias/) contém os 28 arquivos numerados, revisados e reproduzidos no Apêndice B do DOCX. A captura complementar do painel está em `painel-visao-geral.png`. As capturas 15 e 18 foram refeitas no Compass; o run #69 foi aprovado e os checks do HEAD atual ficam no PR. O [vídeo silencioso de demonstração](apresentacao/demonstracao-agropulse.mp4) é uma gravação contínua de 44 segundos da aba local no Chrome; trechos da visão geral, do mapa de talhões e dos sensores foram conferidos.
+
+O [roteiro de apresentação](ROTEIRO-APRESENTACAO.md) organiza a demonstração local, reforça o recorte geográfico único do campus e lista os cuidados para não misturar dados sintéticos com fontes oficiais.
 
 ## Checklist do relatório
 
@@ -38,16 +32,30 @@ CRUD de fazendas e talhões, autenticação, leitura de telemetria, quatro agreg
 | Prints do código e comandos de persistência | `app/routers/fields.py` (insert, update, delete), `workers/simulator.py` (`insert_many`), `infra/mongo/02-schema.js`, `workers/rollup.py` (`$merge`) |
 | Prints da base de dados | Compass ou mongosh: coleções, documentos, `getCollectionInfos` da time series, `explain`, falha de validação (veja `docs/MODELO-DADOS.md`) |
 | Link do GitHub | Repositório público ou com acesso para o professor |
-| Identificação dos integrantes | Nome e RA de cada integrante na capa do relatório |
+| Identificação dos integrantes | Nomes completos na capa; números de matrícula omitidos por decisão do grupo |
+| Vídeo de contingência | [MP4 silencioso de 44 segundos](apresentacao/demonstracao-agropulse.mp4), gravação contínua da aba local no Chrome; mostra trechos da visão geral, mapa de talhões e sensores |
 
 Tire os prints durante o desenvolvimento, não no último dia.
 
-## Truque para a demo de alertas
+## Demonstração isolada de alertas
 
-Para disparar um alerta na hora, aumente o limiar das regras:
+A avaliação local ocorre a cada 30 segundos por padrão. Para evitar alterar a demonstração principal, escolha um nome de projeto e portas que estejam livres e prepare uma cópia isolada:
 
-```js
-db.alert_rules.updateMany({}, { $set: { threshold: 80 } })
+```bash
+COMPOSE_PROJECT_NAME=agropulse-alert-demo WEB_PORT=43100 API_PORT=43101 MONGO_PORT=43102 make demo
 ```
 
-O alerta aparece em até 30 segundos em `db.alerts.find()` e no log do serviço `alerts`.
+No Compass ou `mongosh`, aumente somente o limiar da regra de umidade. O worker cria um alerta na próxima avaliação se ainda não houver um alerta aberto para essa regra; caso já exista, apresente o evento existente, pois o worker evita duplicatas:
+
+```js
+db.alert_rules.updateOne({ metric: "soil_moisture" }, { $set: { threshold: 80 } })
+db.alerts.find({ status: "open" })
+```
+
+Depois de salvar as evidências, encerre apenas o projeto descartável e remova o volume que foi criado para ele:
+
+```bash
+docker compose -p agropulse-alert-demo down -v
+```
+
+Confira cuidadosamente o nome do projeto antes de usar `down -v`; não aplique esse comando à stack principal `agropulse`.

@@ -11,6 +11,9 @@ from workers.common import get_db, setup_logging
 log = logging.getLogger("alerts")
 
 OPERATORS = {"lt": lambda value, limit: value < limit, "gt": lambda value, limit: value > limit}
+CLAIM_FIELD = "notification_claimed_at"
+NOTIFIED_FIELD = "notified_at"
+CLAIM_LEASE_SECONDS = 120
 
 
 def breached(value, operator, threshold):
@@ -80,19 +83,84 @@ def send_webhook(url, payload):
         headers={"Content-Type": "application/json"},
     )
     try:
-        urllib.request.urlopen(request, timeout=5).close()
+        with urllib.request.urlopen(request, timeout=5) as response:
+            return 200 <= response.status < 300
     except OSError:
         log.exception("webhook indisponível")
+        return False
+
+
+def claim_alert(db, alert_id, now=None):
+    """Atomically claim an unnotified alert, reclaiming expired worker leases."""
+    now = now or datetime.now(UTC)
+    expired_before = now - timedelta(seconds=CLAIM_LEASE_SECONDS)
+    result = db.alerts.update_one(
+        {
+            "_id": alert_id,
+            NOTIFIED_FIELD: {"$exists": False},
+            "$or": [
+                {CLAIM_FIELD: {"$exists": False}},
+                {CLAIM_FIELD: {"$lte": expired_before}},
+            ],
+        },
+        {"$set": {CLAIM_FIELD: now}},
+    )
+    return result.modified_count == 1
+
+
+def dispatch_alert(db, alert, webhook_url):
+    now = datetime.now(UTC)
+    if not claim_alert(db, alert["_id"], now):
+        return False
+    payload = build_payload(alert)
+    log.warning("ALERTA %s", payload)
+    if webhook_url and not send_webhook(webhook_url, payload):
+        db.alerts.update_one(
+            {"_id": alert["_id"], CLAIM_FIELD: now},
+            {"$unset": {CLAIM_FIELD: ""}},
+        )
+        log.error("webhook do alerta %s falhou; o alerta continuará pendente", alert["_id"])
+        return False
+    db.alerts.update_one(
+        {"_id": alert["_id"], CLAIM_FIELD: now},
+        {
+            "$set": {NOTIFIED_FIELD: datetime.now(UTC)},
+            "$unset": {CLAIM_FIELD: ""},
+        },
+    )
+    return True
+
+
+def dispatch_pending(db, webhook_url):
+    """Recover alerts created while the notifier was offline."""
+    cursor = db.alerts.find({NOTIFIED_FIELD: {"$exists": False}}).sort("triggered_at", 1)
+    return sum(dispatch_alert(db, alert, webhook_url) for alert in cursor)
 
 
 def notifier_loop(db, webhook_url):
     pipeline = [{"$match": {"operationType": "insert"}}]
-    with db.alerts.watch(pipeline) as stream:
-        for change in stream:
-            payload = build_payload(change["fullDocument"])
-            log.warning("ALERTA %s", payload)
-            if webhook_url:
-                send_webhook(webhook_url, payload)
+    while True:
+        try:
+            # Open the stream before scanning pending alerts. An insert racing
+            # with the scan is then either found by the scan or delivered by
+            # the stream; the atomic claim makes the overlap harmless.
+            with db.alerts.watch(pipeline, max_await_time_ms=1000) as stream:
+                recovered = dispatch_pending(db, webhook_url)
+                if recovered:
+                    log.info("alertas pendentes recuperados: %s", recovered)
+                next_retry = time.monotonic() + 30
+                while stream.alive:
+                    change = stream.try_next()
+                    if change:
+                        dispatch_alert(db, change["fullDocument"], webhook_url)
+                    if time.monotonic() >= next_retry:
+                        recovered = dispatch_pending(db, webhook_url)
+                        if recovered:
+                            log.info("alertas pendentes recuperados: %s", recovered)
+                        next_retry = time.monotonic() + 30
+        except Exception:
+            log.exception("change stream de alertas indisponível; nova tentativa em 5s")
+            time.sleep(5)
 
 
 def main():

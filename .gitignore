@@ -1,4 +1,7 @@
 .env
+.env.*
+!.env.example
+!.env.prod.example
 __pycache__/
 .pytest_cache/
 .ruff_cache/
@@ -6,4 +9,11 @@ __pycache__/
 node_modules/
 .next/
 *.zip
+data/imports/*.csv
+!data/imports/pam-sp-2023.csv
+!data/imports/inmet-sp-a763-2024.zip
 .DS_Store
+/AGENTS.md
+/.agents/
+/docs/RELATORIO-TECNICO.pdf
+/output/pdf/agropulse-relatorio-execucao-auditoria-*.pdf

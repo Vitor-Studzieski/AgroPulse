@@ -19,8 +19,15 @@ def build_pipeline(since):
                 "moisture_avg": {"$avg": "$soil_moisture"},
                 "moisture_min": {"$min": "$soil_moisture"},
                 "moisture_max": {"$max": "$soil_moisture"},
+                "soil_temp_avg": {"$avg": "$soil_temp"},
+                "soil_temp_min": {"$min": "$soil_temp"},
+                "soil_temp_max": {"$max": "$soil_temp"},
                 "air_temp_avg": {"$avg": "$air_temp"},
+                "air_temp_min": {"$min": "$air_temp"},
+                "air_temp_max": {"$max": "$air_temp"},
                 "rain_mm": {"$sum": "$rainfall_mm"},
+                "rainfall_mm_min": {"$min": "$rainfall_mm"},
+                "rainfall_mm_max": {"$max": "$rainfall_mm"},
                 "readings": {"$sum": 1},
             }
         },
@@ -32,8 +39,15 @@ def build_pipeline(since):
                 "moisture_avg": {"$round": ["$moisture_avg", 2]},
                 "moisture_min": 1,
                 "moisture_max": 1,
+                "soil_temp_avg": {"$round": ["$soil_temp_avg", 2]},
+                "soil_temp_min": {"$round": ["$soil_temp_min", 2]},
+                "soil_temp_max": {"$round": ["$soil_temp_max", 2]},
                 "air_temp_avg": {"$round": ["$air_temp_avg", 2]},
+                "air_temp_min": {"$round": ["$air_temp_min", 2]},
+                "air_temp_max": {"$round": ["$air_temp_max", 2]},
                 "rain_mm": {"$round": ["$rain_mm", 2]},
+                "rainfall_mm_min": {"$round": ["$rainfall_mm_min", 2]},
+                "rainfall_mm_max": {"$round": ["$rainfall_mm_max", 2]},
                 "readings": 1,
             }
         },
@@ -51,7 +65,7 @@ def build_pipeline(since):
 def main():
     setup_logging()
     parser = argparse.ArgumentParser()
-    parser.add_argument("--days", type=int, default=30)
+    parser.add_argument("--days", type=int, default=90)
     args = parser.parse_args()
 
     db = get_db()
