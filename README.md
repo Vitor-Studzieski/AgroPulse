@@ -8,7 +8,10 @@ Projeto da atividade prática **IAL-215 – Banco de Dados NoSQL**.
 
 - [Apresentação em PowerPoint](docs/apresentacao/AgroPulse-IAL-215.pptx)
 - [Roteiro de 12 minutos](docs/ROTEIRO-APRESENTACAO.md)
-- [Relatório técnico](docs/RELATORIO-MODELO.md)
+- [Relatório técnico final (DOCX)](docs/RELATORIO-TECNICO.docx)
+- [Fonte editável do relatório (Markdown)](docs/RELATORIO-MODELO.md)
+- [Evidências nomeadas](docs/evidencias/README.md)
+- [Vídeo local de demonstração (44 s, sem áudio)](docs/apresentacao/demonstracao-agropulse.mp4)
 
 ## Subir a demonstração local
 
