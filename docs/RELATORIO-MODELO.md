@@ -1,6 +1,6 @@
 # AgroPulse — relatório técnico
 
-> Modelo editável para a atividade IAL-215. Substitua os campos entre colchetes, anexe as evidências solicitadas e revise os resultados depois da demonstração. Não declare importações, publicação ou testes que não tenham sido realizados.
+> Relatório técnico da atividade IAL-215. Revise os dados da apresentação e as verificações se a implementação mudar. Não declare importações, publicação ou testes que não tenham sido realizados.
 
 ## Capa
 
@@ -9,7 +9,7 @@
 | Instituição | Fatec Pompéia — Shunji Nishimura |
 | Disciplina | IAL-215 — Banco de Dados NoSQL |
 | Projeto | AgroPulse — plataforma de monitoramento de safra |
-| Integrantes | Vitor Studzieski (RA pendente), Maria Fernanda Passos (RA pendente) e Lauan Alves Ferneda (RA pendente) |
+| Integrantes | Vitor Studzieski, Maria Fernanda Passos e Lauan Alves Ferneda |
 | Repositório (branch de entrega) | [AgroPulse — feature/agropulse-completion](https://github.com/Vitor-Studzieski/AgroPulse/tree/feature/agropulse-completion) |
 | Pull request para revisão | [PR #1](https://github.com/Vitor-Studzieski/AgroPulse/pull/1) — aberto, sem merge |
 
@@ -125,7 +125,7 @@ A interface Next.js autentica pela API FastAPI e oferece o painel e os formulár
 
 ## 7. Testes e verificações
 
-Esta seção registra as verificações executadas e as evidências disponíveis. As suítes de API e workers, o build de produção da interface e os manifests/builds locais foram executados. A branch `feature/agropulse-completion` foi publicada. O status dos cinco jobs do CI deve ser consultado no PR #1 para o HEAD mais recente.
+Esta seção registra as verificações executadas e as evidências disponíveis. As suítes de API e workers, o build de produção da interface e os manifests/builds locais foram executados. A branch `feature/agropulse-completion` foi publicada. O run remoto #69 passou para o commit `74d7485`; consulte o PR #1 para os checks do HEAD atual.
 
 | Verificação | Resultado observado | Data / evidência |
 |---|---|---|
@@ -138,7 +138,7 @@ Esta seção registra as verificações executadas e as evidências disponíveis
 | Demonstração em banco vazio | `make demo` em projeto Compose isolado criou seed, 3 talhões e 6 sensores; backfill gerou 12.096 leituras sintéticas de sete dias; importou INMET A763 (8.784 leituras) e PAM/SP (1.556 registros); o rollup criou 24 documentos em `field_daily_stats`. A API autenticada retornou clima 2024 e top 10 do ranking 2023. A segunda execução ignorou o backfill existente e não duplicou os resumos diários; a contagem observada após a simulação ao vivo foi 12.840 leituras. | 2026-10-31; o projeto e volume temporários foram removidos após a conferência |
 | Fluxo CRUD integrado | Conta sintética criada e atualizada; fazenda, talhão, safra, operação, sensor e regra exercitados por API; worker gerou alerta a partir de leituras existentes, API resolveu e removeu o evento | Stack local isolada em 2026-10-31; conta e dados descartáveis removidos após a validação |
 | Telemetria, clima, produção e alerta em fluxo integrado | `make demo` em um projeto Compose isolado novo: 12.096 leituras de backfill; 8.784 observações INMET 2024; 1.556 registros IBGE/PAM 2023; 24 resumos. Uma conta aleatória temporária percorreu CRUD autenticado de fazenda, talhão GeoJSON, safra, operação, sensor e regra; a área e o centroide foram calculados. O simulador forneceu leitura ao vivo; série horária, clima anual e ranking de 10 municípios responderam; o worker gerou alerta com webhook vazio. | 2026-11-01; conta, containers e volume temporários removidos; stack principal preservada |
-| GitHub Actions remoto | Cinco jobs: schema, workers, API, web e Compose aprovados | Run [#59](https://github.com/Vitor-Studzieski/AgroPulse/actions/runs/41389810655) do commit `871ce30`, em 2026-11-02; a captura 28 mostra esse resultado. Consulte o PR #1 para o status do HEAD mais recente. |
+| GitHub Actions remoto | Cinco jobs: schema, workers, API, web e Compose aprovados | Run [#69](https://github.com/Vitor-Studzieski/AgroPulse/actions/runs/41513636208) do commit `74d7485`, em 2026-11-02. A captura 28 registra um run anterior; consulte o [PR #1](https://github.com/Vitor-Studzieski/AgroPulse/pull/1) para os checks do HEAD atual. |
 
 ## 8. Demonstração
 
@@ -162,13 +162,13 @@ Limitações verificadas ou pendentes de evidência:
 - Na validação descartável sem volume, o ZIP oficial do INMET 2024 foi importado com filtro SP após aplicação de `infra/mongo/02-schema.js`: 40 estações e 351.360 observações. A amostra compacta versionada conserva somente o arquivo oficial da A763/Marília (8.784 leituras). `make demo` a carrega para que a demonstração anual funcione em um clone limpo; a API e o painel mostraram A763 a 27,8 km do campus e a última observação em 31/12/2024 23:00 UTC (20:00 no horário local). A imagem complementar `docs/evidencias/painel-visao-geral.png` registra o cartão de clima com o ano 2024, a estação e a última observação às 20:00 no horário local.
 - A fixture SIDRA oficial de Sorriso (MT), ano 2023, valida leitura e parsing e foi importada em um MongoDB temporário sem volume persistente; foram conferidos três documentos (soja, milho e cana). Repetir ou fotografar essa consulta no ambiente de demonstração do grupo, se exigido.
 - A amostra oficial da PAM/SIDRA 2023 para SP está versionada em `data/imports/pam-sp-2023.csv` e é carregada por `make demo` sem consulta externa. O gerador consultou as APIs oficiais e reproduziu o CSV versionado byte a byte. O importador persistiu 1.556 combinações municipais completas; a API autenticada retornou o top 10 de soja por produtividade e o painel exibiu Pompéia na referência oficial regional. Isso não altera a demonstração espacial, que permanece limitada ao campus e a polígonos sintéticos próximos.
-- A branch pública `feature/agropulse-completion` está no remoto `https://github.com/Vitor-Studzieski/AgroPulse` e o PR #1 está aberto para revisão, sem merge. Consulte o próprio PR para conferir o CI mais recente. Ainda faltam inserir os RAs obrigatórios dos integrantes para finalizar a capa acadêmica.
+- A branch pública `feature/agropulse-completion` está no remoto `https://github.com/Vitor-Studzieski/AgroPulse` e o PR #1 está aberto para revisão, sem merge. O run #69 passou no commit `74d7485`; após novas atualizações, consulte o PR para conferir os checks do HEAD atual. A capa lista os três integrantes informados pelo grupo.
 
 Como trabalhos futuros, podem ser considerados autenticação de dispositivos e ingestão por gateway, exportação do relatório de safra e avaliação com uma carga de dados maior, preservando os limites financeiros definidos.
 
 ## 10. Conclusão
 
-O AgroPulse reúne CRUD agrícola, persistência MongoDB, telemetria, geodados, análises e workers em uma solução local reproduzível. Antes da entrega, complete os RAs dos integrantes na capa e ensaie o roteiro de demonstração.
+O AgroPulse reúne CRUD agrícola, persistência MongoDB, telemetria, geodados, análises e workers em uma solução local reproduzível. Antes da apresentação, ensaie o roteiro e confirme que a stack local está disponível.
 
 ## Referências
 
@@ -212,3 +212,119 @@ Use os nomes previstos pelo guia e marque o estado após incluir cada arquivo em
 | 26 | `26-field-daily-stats.png` | [x] |
 | 27 | `27-github-repo.png` | [x] |
 | 28 | `28-github-actions-verde.png` | [x] |
+
+## Apêndice B — evidências visuais
+
+As imagens abaixo são capturas reais da interface local, do código, do MongoDB Compass e do repositório. A captura 28 registra o run #59 no commit `871ce30`; o run #69 do commit `74d7485` foi aprovado posteriormente e está vinculado na seção de verificações. Consulte o PR #1 para os checks do HEAD atual.
+
+**Figura B.01 — Login da demonstração.**
+
+![Captura 01 — Login da demonstração](evidencias/01-login.png)
+
+**Figura B.02 — Fazendas do ambiente de demonstração.**
+
+![Captura 02 — Fazendas](evidencias/02-fazendas.png)
+
+**Figura B.03 — Talhões cadastrados.**
+
+![Captura 03 — Talhões](evidencias/03-talhoes.png)
+
+**Figura B.04 — Mapa centrado no campus da Fatec Pompéia.**
+
+![Captura 04 — Mapa do campus](evidencias/04-mapa.png)
+
+**Figura B.05 — Série de umidade do solo.**
+
+![Captura 05 — Gráfico de umidade](evidencias/05-grafico-umidade.png)
+
+**Figura B.06 — Tela de safras.**
+
+![Captura 06 — Safras](evidencias/06-safras.png)
+
+**Figura B.07 — Tela de operações.**
+
+![Captura 07 — Operações](evidencias/07-operacoes.png)
+
+**Figura B.08 — Alertas da aplicação.**
+
+![Captura 08 — Alertas](evidencias/08-alertas.png)
+
+**Figura B.09 — Endpoint de saúde da API com resposta HTTP 200.**
+
+![Captura 09 — Swagger e health](evidencias/09-swagger.png)
+
+**Figura B.10 — Inserção de talhão na API.**
+
+![Captura 10 — Código de inserção de talhão](evidencias/10-codigo-insert-talhao.png)
+
+**Figura B.11 — Inserção em lote de leituras.**
+
+![Captura 11 — Código de insert many](evidencias/11-codigo-insert-many.png)
+
+**Figura B.12 — Schema e validação MongoDB.**
+
+![Captura 12 — Schema MongoDB](evidencias/12-schema-js.png)
+
+**Figura B.13 — Agregação diária com escrita idempotente.**
+
+![Captura 13 — Código de merge](evidencias/13-codigo-merge.png)
+
+**Figura B.14 — Change stream para processamento de alertas.**
+
+![Captura 14 — Código de change stream](evidencias/14-codigo-change-stream.png)
+
+**Figura B.15 — Contagem de leituras de sensores.**
+
+![Captura 15 — Contagem de leituras](evidencias/15-count-leituras.png)
+
+**Figura B.16 — Configuração de time series e retenção.**
+
+![Captura 16 — Metadados da coleção time series](evidencias/16-getcollectioninfos-timeseries.png)
+
+**Figura B.17 — Rejeição de documento inválido pela validação.**
+
+![Captura 17 — Erro de validação](evidencias/17-validacao-erro.png)
+
+**Figura B.18 — Plano de consulta com estágio IXSCAN.**
+
+![Captura 18 — Plano IXSCAN](evidencias/18-explain-ixscan.png)
+
+**Figura B.19 — Consulta geoespacial no ponto do campus.**
+
+![Captura 19 — Consulta geoIntersects](evidencias/19-geointersects.png)
+
+**Figura B.20 — Agregação da média diária.**
+
+![Captura 20 — Média diária](evidencias/20-agregacao-media-diaria.png)
+
+**Figura B.21 — Coleções do banco AgroPulse no Compass.**
+
+![Captura 21 — Coleções no Compass](evidencias/21-compass-colecoes.png)
+
+**Figura B.22 — Documento de talhão.**
+
+![Captura 22 — Documento fields](evidencias/22-documento-fields.png)
+
+**Figura B.23 — Documento de leitura de sensor.**
+
+![Captura 23 — Documento sensor reading](evidencias/23-documento-sensor-reading.png)
+
+**Figura B.24 — Índices da coleção fields.**
+
+![Captura 24 — Índices de fields](evidencias/24-indices-fields.png)
+
+**Figura B.25 — Regras de validação da coleção farms.**
+
+![Captura 25 — Validação farms](evidencias/25-validacao-farms.png)
+
+**Figura B.26 — Documento agregado em field_daily_stats.**
+
+![Captura 26 — Estatística diária do talhão](evidencias/26-field-daily-stats.png)
+
+**Figura B.27 — Repositório público e branch de entrega.**
+
+![Captura 27 — Repositório GitHub](evidencias/27-github-repo.png)
+
+**Figura B.28 — Execução aprovada do GitHub Actions no commit 871ce30.**
+
+![Captura 28 — GitHub Actions](evidencias/28-github-actions-verde.png)
