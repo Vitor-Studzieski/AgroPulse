@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 
+from app.datetime_utils import as_utc
 from app.db import db
 from app.deps import get_owned_season, load_owned_field
 from app.models import SeasonIn, SeasonOut, SeasonUpdate
@@ -9,9 +10,7 @@ router = APIRouter(prefix="/seasons", tags=["seasons"])
 
 
 def validate_date_order(planting_date, harvest_date):
-    if harvest_date is not None and harvest_date.replace(tzinfo=None) < planting_date.replace(
-        tzinfo=None
-    ):
+    if harvest_date is not None and as_utc(harvest_date) < as_utc(planting_date):
         raise HTTPException(status_code=422, detail="harvest_date não pode anteceder planting_date")
 
 

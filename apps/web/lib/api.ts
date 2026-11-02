@@ -16,6 +16,16 @@ function errorMessage(status: number, body: unknown): string {
   return `Não foi possível concluir a solicitação (HTTP ${status}).`;
 }
 
+export class ApiError extends Error {
+  readonly status: number;
+
+  constructor(status: number, message: string) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+  }
+}
+
 export async function apiFetch<T>(path: string, token?: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers);
   const isForm = init.body instanceof FormData || init.body instanceof URLSearchParams;
@@ -47,7 +57,7 @@ export async function apiFetch<T>(path: string, token?: string, init: RequestIni
     ) {
       window.dispatchEvent(new CustomEvent("agropulse:unauthorized", { detail: token }));
     }
-    throw new Error(errorMessage(response.status, body));
+    throw new ApiError(response.status, errorMessage(response.status, body));
   }
   if (response.status === 204) return undefined as T;
   if (response.status === 205) return undefined as T;

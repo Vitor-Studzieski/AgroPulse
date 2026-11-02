@@ -1,4 +1,9 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+import hashlib
+import json
+
+from bson import ObjectId
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response
+from pymongo.errors import DuplicateKeyError
 
 from app.db import db
 from app.deps import (
@@ -22,15 +27,58 @@ async def validate_season(field_id, season_id):
     return season["_id"]
 
 
+def idempotency_object_id(owner_id, idempotency_key):
+    identity = f"{owner_id}\0{idempotency_key}".encode()
+    return ObjectId(hashlib.sha256(identity).digest()[:12])
+
+
+def operation_fingerprint(body: OperationIn) -> str:
+    serialized = json.dumps(
+        body.model_dump(mode="json", exclude_none=True),
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return hashlib.sha256(serialized.encode()).hexdigest()
+
+
 @router.post("", response_model=OperationOut, status_code=201)
-async def create_operation(body: OperationIn, user: dict = Depends(current_user)):
+async def create_operation(
+    body: OperationIn,
+    response: Response,
+    idempotency_key: str | None = Header(
+        default=None, alias="Idempotency-Key", min_length=1, max_length=128
+    ),
+    user: dict = Depends(current_user),
+):
     field = await load_owned_field(body.field_id, user)
     season_id = await validate_season(field["_id"], body.season_id)
     document = body.model_dump(exclude_none=True, exclude={"field_id", "season_id"})
     document["field_id"] = field["_id"]
     if season_id is not None:
         document["season_id"] = season_id
-    result = await db.operations.insert_one(document)
+
+    fingerprint = None
+    if idempotency_key is not None:
+        document["_id"] = idempotency_object_id(user["_id"], idempotency_key)
+        fingerprint = operation_fingerprint(body)
+        document["idempotency_fingerprint"] = fingerprint
+
+    try:
+        result = await db.operations.insert_one(document)
+    except DuplicateKeyError:
+        if idempotency_key is None:
+            raise
+        existing = await db.operations.find_one({"_id": document["_id"]})
+        if existing is None:
+            raise
+        if existing.get("idempotency_fingerprint") != fingerprint:
+            raise HTTPException(
+                status_code=409,
+                detail="Idempotency-Key já utilizado com outro conteúdo",
+            )
+        response.status_code = 200
+        return existing
+
     document["_id"] = result.inserted_id
     return document
 

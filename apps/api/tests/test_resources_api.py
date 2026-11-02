@@ -1,5 +1,5 @@
 from copy import deepcopy
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from bson import ObjectId
 from fastapi.testclient import TestClient
@@ -72,15 +72,20 @@ class FakeCollection:
         return FakeCursor(d for d in self.documents if self.matches(d, query))
 
     async def insert_one(self, document):
+        saved = deepcopy(document)
+        inserted_id = saved.get("_id", ObjectId())
+        if any(existing.get("_id") == inserted_id for existing in self.documents):
+            from pymongo.errors import DuplicateKeyError
+
+            raise DuplicateKeyError("_id_")
         for key in self.unique_fields:
-            if any(existing.get(key) == document.get(key) for existing in self.documents):
+            if any(existing.get(key) == saved.get(key) for existing in self.documents):
                 from pymongo.errors import DuplicateKeyError
 
                 raise DuplicateKeyError(key)
-        saved = deepcopy(document)
-        saved["_id"] = ObjectId()
+        saved["_id"] = inserted_id
         self.documents.append(saved)
-        return FakeInsertResult(saved["_id"])
+        return FakeInsertResult(inserted_id)
 
     async def update_one(self, query, update):
         document = next((d for d in self.documents if self.matches(d, query)), None)
@@ -139,6 +144,7 @@ def make_client(monkeypatch):
         fake_db,
         {
             "owner": owner_id,
+            "other_owner": other_owner_id,
             "field": field_id,
             "other_field": other_field_id,
             "farm": farm_id,
@@ -196,6 +202,46 @@ def test_season_rejects_harvest_before_planting_and_duplicate_label(monkeypatch)
         }
         assert client.post("/seasons", json=valid).status_code == 201
         assert client.post("/seasons", json=valid).status_code == 409
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_season_compares_instants_across_offsets_on_create_and_patch(monkeypatch):
+    client, fake_db, ids = make_client(monkeypatch)
+    planting = "2026-09-01T10:00:00-03:00"  # 13:00Z
+    earlier_harvest = "2026-09-01T12:00:00Z"
+    later_harvest = "2026-09-01T14:00:00Z"
+    try:
+        rejected = client.post(
+            "/seasons",
+            json={
+                "field_id": str(ids["field"]),
+                "label": "offset-rejected",
+                "planting_date": planting,
+                "harvest_date": earlier_harvest,
+            },
+        )
+        assert rejected.status_code == 422
+        assert fake_db.seasons.documents == []
+
+        created = client.post(
+            "/seasons",
+            json={
+                "field_id": str(ids["field"]),
+                "label": "offset-valid",
+                "planting_date": planting,
+                "harvest_date": later_harvest,
+            },
+        )
+        assert created.status_code == 201
+        season_id = created.json()["id"]
+        invalid_patch = client.patch(
+            f"/seasons/{season_id}", json={"harvest_date": earlier_harvest}
+        )
+        assert invalid_patch.status_code == 422
+        assert fake_db.seasons.documents[0]["harvest_date"].astimezone(timezone.utc) == datetime(
+            2026, 9, 1, 14, tzinfo=timezone.utc
+        )
     finally:
         app.dependency_overrides.clear()
 
@@ -280,6 +326,69 @@ def test_operation_requires_owned_field_and_same_field_season(monkeypatch):
         app.dependency_overrides.clear()
 
 
+def test_operation_idempotency_key_replays_only_the_same_owner_and_payload(monkeypatch):
+    client, fake_db, ids = make_client(monkeypatch)
+    body = {
+        "field_id": str(ids["field"]),
+        "type": "irrigacao",
+        "date": "2026-09-01T00:00:00Z",
+        "cost_brl": 25.5,
+        "details": {"method": "synthetic"},
+    }
+    headers = {"Idempotency-Key": "retry-key-001"}
+    try:
+        created = client.post("/operations", json=body, headers=headers)
+        assert created.status_code == 201
+        replay = client.post("/operations", json=body, headers=headers)
+        assert replay.status_code == 200
+        assert replay.json()["id"] == created.json()["id"]
+        assert len(fake_db.operations.documents) == 1
+
+        reused = client.post(
+            "/operations", json={**body, "cost_brl": 30}, headers=headers
+        )
+        assert reused.status_code == 409
+        assert len(fake_db.operations.documents) == 1
+
+        first_unkeyed = client.post("/operations", json=body)
+        second_unkeyed = client.post("/operations", json=body)
+        assert first_unkeyed.status_code == second_unkeyed.status_code == 201
+        assert first_unkeyed.json()["id"] != second_unkeyed.json()["id"]
+
+        app.dependency_overrides[current_user] = lambda: {
+            "_id": ids["other_owner"],
+            "role": "produtor",
+        }
+        other_owner = client.post(
+            "/operations",
+            json={**body, "field_id": str(ids["other_field"])},
+            headers=headers,
+        )
+        assert other_owner.status_code == 201
+        assert other_owner.json()["id"] != created.json()["id"]
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_extreme_nonfinite_number_returns_json_422(monkeypatch):
+    client, fake_db, ids = make_client(monkeypatch)
+    body = (
+        '{"field_id":"'
+        + str(ids["field"])
+        + '","metric":"soil_moisture","operator":"lt",'
+        '"threshold":1e999,"window_minutes":30}'
+    )
+    try:
+        response = client.post(
+            "/alert-rules", content=body, headers={"Content-Type": "application/json"}
+        )
+        assert response.status_code == 422
+        assert response.json()["detail"][0]["input"] == "inf"
+        assert fake_db.alert_rules.documents == []
+    finally:
+        app.dependency_overrides.clear()
+
+
 def test_sensor_uses_farm_from_owned_field_and_handles_duplicate_device(monkeypatch):
     client, fake_db, ids = make_client(monkeypatch)
     body = {"device_id": "AP-001", "field_id": str(ids["field"])}
@@ -353,9 +462,18 @@ def test_alert_crud_checks_rule_field_and_tracks_resolution(monkeypatch):
         "metric": "soil_moisture",
         "value": 15.2,
         "threshold": 20,
-        "triggered_at": datetime(2026, 10, 1, tzinfo=timezone.utc).isoformat(),
+        "triggered_at": datetime(2026, 10, 1, 20, 14, 34, tzinfo=timezone.utc).isoformat(),
     }
     try:
+        future_offset = (
+            (datetime.now(timezone.utc) + timedelta(minutes=30))
+            .astimezone(timezone(timedelta(hours=-3)))
+            .isoformat()
+        )
+        future_alert = client.post("/alerts", json={**body, "triggered_at": future_offset})
+        assert future_alert.status_code == 422
+        assert fake_db.alerts.documents == []
+
         created = client.post("/alerts", json=body)
         assert created.status_code == 201
         alert_id = created.json()["id"]
@@ -377,6 +495,30 @@ def test_alert_crud_checks_rule_field_and_tracks_resolution(monkeypatch):
         repeated_resolution = client.patch(f"/alerts/{alert_id}", json={"status": "resolved"})
         assert repeated_resolution.status_code == 200
         assert repeated_resolution.json()["resolved_at"] == resolved_at
+        # 21:14Z is after the alert's 20:14Z trigger despite its earlier local wall time.
+        offset_resolution = client.patch(
+            f"/alerts/{alert_id}",
+            json={
+                "status": "resolved",
+                "resolved_at": "2026-10-01T18:14:34-03:00",
+            },
+        )
+        assert offset_resolution.status_code == 200
+        assert datetime.fromisoformat(offset_resolution.json()["resolved_at"]) == datetime(
+            2026, 10, 1, 21, 14, 34, tzinfo=timezone.utc
+        )
+        future_offset_resolution = (
+            (datetime.now(timezone.utc) + timedelta(minutes=30))
+            .astimezone(timezone(timedelta(hours=-3)))
+            .isoformat()
+        )
+        assert (
+            client.patch(
+                f"/alerts/{alert_id}",
+                json={"status": "resolved", "resolved_at": future_offset_resolution},
+            ).status_code
+            == 422
+        )
         future_resolution = client.patch(
             f"/alerts/{alert_id}",
             json={
@@ -396,6 +538,21 @@ def test_alert_crud_checks_rule_field_and_tracks_resolution(monkeypatch):
         )
     finally:
         app.dependency_overrides.clear()
+
+
+def test_cors_preflight_allows_idempotency_key():
+    from app.config import settings
+
+    response = TestClient(app).options(
+        "/operations",
+        headers={
+            "Origin": settings.cors_origins.split(",")[0].strip(),
+            "Access-Control-Request-Method": "POST",
+            "Access-Control-Request-Headers": "authorization,content-type,idempotency-key",
+        },
+    )
+    assert response.status_code == 200
+    assert "idempotency-key" in response.headers["access-control-allow-headers"].lower()
 
 
 def test_new_resources_require_authentication():

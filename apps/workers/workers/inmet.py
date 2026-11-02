@@ -24,6 +24,12 @@ COLUMN_KEYS = {
     "humidity": "UMIDADE RELATIVA DO AR",
     "wind_ms": "VENTO, VELOCIDADE",
 }
+MEASUREMENT_RANGES = {
+    "rain_mm": (0.0, 1_000.0),
+    "air_temp": (-90.0, 60.0),
+    "humidity": (0.0, 100.0),
+    "wind_ms": (0.0, 150.0),
+}
 
 
 def to_float(text):
@@ -80,7 +86,7 @@ def parse_dates(series):
     return pd.to_datetime(series.map(parse_one), errors="coerce")
 
 
-def parse_station(text):
+def parse_station(text, source="CSV de estação"):
     lines = text.splitlines()
     station = parse_metadata(lines[:METADATA_LINES])
     frame = pd.read_csv(
@@ -92,18 +98,66 @@ def parse_station(text):
     if frame.empty:
         return station, pd.DataFrame(columns=["ts", *COLUMN_KEYS])
 
-    hours = frame[frame.columns[1]].astype(str).str.extract(r"(\d{1,2}):?(\d{2})")
+    date_column, time_column = frame.columns[:2]
+    dates = parse_dates(frame[date_column])
+    hours = frame[time_column].astype(str).str.extract(r"(\d{1,2}):?(\d{2})")
+    hour = pd.to_numeric(hours[0], errors="coerce")
+    minute = pd.to_numeric(hours[1], errors="coerce")
+    valid_time = hour.between(0, 23) & minute.between(0, 59)
+    invalid_timestamp = dates.isna() | ~valid_time
+    for row_index in frame.index[invalid_timestamp]:
+        raw_date = frame.at[row_index, date_column]
+        raw_time = frame.at[row_index, time_column]
+        reason = "data inválida" if pd.isna(dates.at[row_index]) else "hora inválida"
+        line_number = int(row_index) + METADATA_LINES + 2
+        log.warning(
+            "%s linha %s descartada: %s (data=%r, hora=%r)",
+            source,
+            line_number,
+            reason,
+            raw_date,
+            raw_time,
+        )
     ts = (
-        parse_dates(frame[frame.columns[0]])
-        + pd.to_timedelta(pd.to_numeric(hours[0], errors="coerce"), unit="h")
-        + pd.to_timedelta(pd.to_numeric(hours[1], errors="coerce"), unit="m")
-    ).dt.tz_localize("UTC")
+        dates
+        + pd.to_timedelta(hour, unit="h")
+        + pd.to_timedelta(minute, unit="m")
+    ).where(~invalid_timestamp).dt.tz_localize("UTC")
 
     columns = {"ts": ts}
     for name, key in COLUMN_KEYS.items():
         match = next((c for c in frame.columns if key in str(c).upper()), None)
-        columns[name] = pd.to_numeric(frame[match], errors="coerce") if match else float("nan")
-    return station, pd.DataFrame(columns).dropna(subset=["ts"])
+        if match is None:
+            columns[name] = float("nan")
+            continue
+
+        values = pd.to_numeric(frame[match], errors="coerce")
+        minimum, maximum = MEASUREMENT_RANGES[name]
+        outside_range = values.notna() & (
+            ~values.map(math.isfinite) | (values < minimum) | (values > maximum)
+        )
+        for row_index in frame.index[outside_range]:
+            line_number = int(row_index) + METADATA_LINES + 2
+            log.warning(
+                "%s linha %s: medida %s fora da faixa [%s, %s]: %s; valor ignorado",
+                source,
+                line_number,
+                name,
+                minimum,
+                maximum,
+                values.at[row_index],
+            )
+        columns[name] = values.mask(outside_range)
+    parsed = pd.DataFrame(columns).dropna(subset=["ts"])
+    no_valid_measurements = parsed[list(COLUMN_KEYS)].isna().all(axis=1)
+    for row_index in parsed.index[no_valid_measurements]:
+        line_number = int(row_index) + METADATA_LINES + 2
+        log.warning(
+            "%s linha %s descartada: nenhuma medida válida",
+            source,
+            line_number,
+        )
+    return station, parsed.loc[~no_valid_measurements]
 
 
 def to_documents(station, frame):
@@ -146,7 +200,7 @@ def import_zip(db, path, states, year=None):
             if not name.upper().endswith(".CSV"):
                 continue
             try:
-                station, frame = parse_station(archive.read(name).decode("latin-1"))
+                station, frame = parse_station(archive.read(name).decode("latin-1"), source=name)
             except (KeyError, ValueError, pd.errors.ParserError) as error:
                 log.warning("CSV de estação ignorado (%s): %s", name, error)
                 continue

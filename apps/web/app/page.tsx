@@ -1,14 +1,15 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { FormEvent, ReactNode, useCallback, useEffect, useState } from "react";
-import { Alert, AlertRule, apiFetch, detailOf, entityId, Farm, Field, Operation, Reading, Season, Sensor, SeriesPoint, User } from "@/lib/api";
+import { FormEvent, Fragment, ReactNode, useCallback, useEffect, useRef, useState } from "react";
+import { Alert, AlertRule, apiFetch, ApiError, detailOf, entityId, Farm, Field, Operation, Reading, Season, Sensor, SeriesPoint, User } from "@/lib/api";
 import { OperationDialog, operationTypeLabel, SeasonDialog, seasonStatusLabel, SensorDialog } from "@/components/record-dialogs";
 import { AccountDialog, AccountUpdate } from "@/components/account-dialog";
 import { ProductionRankingPanel, WeatherPanel } from "@/components/insights-panels";
+import { useDialogFocus } from "@/components/use-dialog-focus";
 
-const FieldMap = dynamic(() => import("@/components/leaflet-map"), { ssr: false, loading: () => <div className="map-frame map-loading"><span className="spinner"/>Carregando mapa…</div> });
-const TelemetryChart = dynamic(() => import("@/components/telemetry-chart"), { ssr: false, loading: () => <div className="chart-loading"><span className="spinner"/>Carregando gráfico…</div> });
+const FieldMap = dynamic(() => import("@/components/leaflet-map"), { ssr: false, loading: () => <div className="map-frame map-loading"><span className="skeleton"/>Carregando mapa…</div> });
+const TelemetryChart = dynamic(() => import("@/components/telemetry-chart"), { ssr: false, loading: () => <div className="chart-loading"><span className="skeleton"/>Carregando gráfico…</div> });
 
 type Page = "overview" | "farms" | "fields" | "seasons" | "operations" | "sensors" | "alerts";
 type FarmModal = { mode: "create" | "edit"; farm?: Farm } | null;
@@ -44,7 +45,11 @@ function dateLabel(value?: string, withTime = false): string {
   if (!value) return "—";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "—";
-  return new Intl.DateTimeFormat("pt-BR", withTime ? { dateStyle: "short", timeStyle: "short" } : { dateStyle: "short" }).format(date);
+  const calendarDate = /^\d{4}-\d{2}-\d{2}$/.test(value) || /^\d{4}-\d{2}-\d{2}T00:00:00(?:\.0+)?(?:Z|\+00:00)$/.test(value);
+  const options: Intl.DateTimeFormatOptions = calendarDate
+    ? { dateStyle: "short", timeZone: "UTC" }
+    : withTime ? { dateStyle: "short", timeStyle: "short" } : { dateStyle: "short" };
+  return new Intl.DateTimeFormat("pt-BR", options).format(date);
 }
 // O prazo local controla a interface; a API continua responsável por validar assinatura e acesso.
 function tokenExpirationMs(token: string): number | null {
@@ -90,15 +95,23 @@ function Icon({ name, size = 19 }: { name: string; size?: number }) {
     menu: <><path d="M4 6h16M4 12h16M4 18h16"/></>,
     check: <path d="m5 12 4 4L19 6"/>,
     clock: <><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></>,
+    dashboard: <><rect x="3" y="3" width="8" height="8" rx="1"/><rect x="13" y="3" width="8" height="5" rx="1"/><rect x="13" y="10" width="8" height="11" rx="1"/><rect x="3" y="13" width="8" height="8" rx="1"/></>,
+    warehouse: <><path d="m3 9 9-6 9 6v11H3z"/><path d="M8 20v-6h8v6M7 10h.01M12 10h.01M17 10h.01"/></>,
+    grid: <><rect x="3" y="3" width="8" height="8" rx="1"/><rect x="13" y="3" width="8" height="8" rx="1"/><rect x="3" y="13" width="8" height="8" rx="1"/><rect x="13" y="13" width="8" height="8" rx="1"/></>,
+    wheat: <><path d="M12 22V9"/><path d="M12 12c-4 0-6-2-6-5 4 0 6 2 6 5ZM12 16c-4 0-6-2-6-5 4 0 6 2 6 5ZM12 12c4 0 6-2 6-5-4 0-6 2-6 5ZM12 16c4 0 6-2 6-5-4 0-6 2-6 5Z"/></>,
+    clipboard: <><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4.5h6a1.5 1.5 0 0 0-3-1 1.5 1.5 0 0 0-3 1ZM8 10h8M8 14h8M8 18h5"/></>,
+    radio: <><circle cx="12" cy="12" r="2"/><path d="M5.6 5.6a9 9 0 0 0 0 12.8M18.4 5.6a9 9 0 0 1 0 12.8M8.4 8.4a5 5 0 0 0 0 7.2M15.6 8.4a5 5 0 0 1 0 7.2"/></>,
+    bellRing: <><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9ZM10 21h4"/><path d="M2 8a10 10 0 0 1 2-5M22 8a10 10 0 0 0-2-5"/></>,
+    more: <><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></>,
   };
   return <svg {...common}>{paths[name] ?? <circle cx="12" cy="12" r="8"/>}</svg>;
 }
 
 function Brand({ compact = false }: { compact?: boolean }) {
-  return <div className="brand"><span className="brand-mark"><Icon name="leaf" size={21}/></span>{!compact && <span>Agro<span className="brand-light">Pulse</span><small>GESTÃO INTELIGENTE</small></span>}</div>;
+  return <div className="brand">{!compact && <span>Agro<span className="brand-light">Pulse</span></span>}</div>;
 }
 
-function AuthScreen({ onAuthenticated, sessionExpired = false }: { onAuthenticated: (token: string, user: User) => void; sessionExpired?: boolean }) {
+function AuthScreen({ onAuthenticated, sessionExpired = false, accountDeleted = false }: { onAuthenticated: (token: string, user: User) => void; sessionExpired?: boolean; accountDeleted?: boolean }) {
   const [mode, setMode] = useState<"login" | "register">("login");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -135,7 +148,6 @@ function AuthScreen({ onAuthenticated, sessionExpired = false }: { onAuthenticat
         <span className="eyebrow"><span className="eyebrow-dot"/> TECNOLOGIA NO CAMPO</span>
         <h1>Uma visão mais clara para cada decisão.</h1>
         <p>Conecte suas áreas, acompanhe as condições da lavoura e cuide da sua operação em um só lugar.</p>
-        <div className="story-landscape" aria-hidden="true"><div className="sun-disc"/><div className="hill hill-back"/><div className="hill hill-front"/><div className="field-lines"><i/><i/><i/><i/><i/></div></div>
       </div>
       <div className="auth-footer">AgroPulse · Gestão rural inteligente</div>
     </section>
@@ -146,6 +158,7 @@ function AuthScreen({ onAuthenticated, sessionExpired = false }: { onAuthenticat
         <h2>{mode === "login" ? "Bem-vindo de volta" : "Comece por aqui"}</h2>
         <p className="auth-subtitle">{mode === "login" ? "Acesse sua conta para acompanhar sua operação." : "Crie seu acesso e organize sua produção."}</p>
         {sessionExpired && mode === "login" && <div className="integration-note" role="status">Sua sessão expirou. Entre novamente para continuar.</div>}
+        {accountDeleted && mode === "login" && <div className="integration-note" role="status">Conta excluída com sucesso. Você saiu da sua conta.</div>}
         <form className="auth-form" onSubmit={submit}>
           {mode === "register" && <label>Seu nome<input name="name" type="text" placeholder="Ex.: Ana Souza" minLength={2} maxLength={80} autoComplete="name" required/></label>}
           <label>E-mail<input name="email" type="email" placeholder="voce@exemplo.com" autoComplete="email" required/></label>
@@ -160,57 +173,51 @@ function AuthScreen({ onAuthenticated, sessionExpired = false }: { onAuthenticat
   </main>;
 }
 
-function Sidebar({ page, setPage, farms, selectedFarmId, onFarmSelect, user, onLogout, onAccount, mobileOpen, closeMobile }: {
-  page: Page; setPage: (page: Page) => void; farms: Farm[]; selectedFarmId: string;
+function Sidebar({ page, setPage, farms, selectedFarmId, onFarmSelect, user, onLogout, onAccount, mobileOpen, closeMobile, alertCount }: {
+  page: Page; setPage: (page: Page) => void; farms: Farm[]; selectedFarmId: string; alertCount: number;
   onFarmSelect: (id: string) => void; user: User; onLogout: () => void; onAccount: () => void; mobileOpen: boolean; closeMobile: () => void;
 }) {
-  const navItems: { key: Page; label: string; icon: string }[] = [
-    { key: "overview", label: "Visão geral", icon: "home" },
-    { key: "farms", label: "Fazendas", icon: "farm" },
-    { key: "fields", label: "Talhões", icon: "field" },
-    { key: "seasons", label: "Safras", icon: "calendar" },
-    { key: "operations", label: "Operações", icon: "activity" },
-    { key: "sensors", label: "Sensores", icon: "droplet" },
-    { key: "alerts", label: "Alertas", icon: "bell" },
+  const navGroups: { title: string; items: { key: Page; label: string; icon: string }[] }[] = [
+    { title: "Operação", items: [{ key: "overview", label: "Visão geral", icon: "dashboard" }, { key: "farms", label: "Fazendas", icon: "warehouse" }, { key: "fields", label: "Talhões", icon: "grid" }] },
+    { title: "Planejamento", items: [{ key: "seasons", label: "Safras", icon: "wheat" }, { key: "operations", label: "Operações", icon: "clipboard" }] },
+    { title: "Monitoramento", items: [{ key: "sensors", label: "Sensores", icon: "radio" }, { key: "alerts", label: "Alertas", icon: "bellRing" }] },
   ];
   return <>
     {mobileOpen && <button className="sidebar-backdrop" aria-label="Fechar menu" onClick={closeMobile}/>}
     <aside className={`sidebar ${mobileOpen ? "sidebar-open" : ""}`}>
       <div className="sidebar-top"><Brand/><button className="icon-button sidebar-close" onClick={closeMobile} aria-label="Fechar menu"><Icon name="close"/></button></div>
-      <div className="workspace-label">ESPAÇO DE TRABALHO</div>
-      <nav className="main-nav" aria-label="Menu principal">{navItems.map((item) => <button key={item.key} className={`nav-link ${page === item.key ? "nav-active" : ""}`} onClick={() => { setPage(item.key); closeMobile(); }}><Icon name={item.icon}/><span>{item.label}</span>{item.key === "alerts" && <span className="nav-soon">NOVO</span>}</button>)}</nav>
-      <div className="sidebar-section"><div className="section-heading">SUAS FAZENDAS <span>{farms.length}</span></div>
-        {farms.length === 0 ? <p className="sidebar-empty">Cadastre uma fazenda para começar.</p> : farms.slice(0, 5).map((farm) => <button key={farm.id} onClick={() => { onFarmSelect(farm.id); setPage("overview"); closeMobile(); }} className={`farm-nav ${selectedFarmId === farm.id ? "farm-nav-active" : ""}`}><span className="farm-nav-dot"/><span className="farm-nav-name">{farm.name}</span><small>{farm.state}</small></button>)}
-      </div>
+      <label className="sidebar-farm-select"><span>Fazenda</span><select value={selectedFarmId} disabled={!farms.length} onChange={(event) => { onFarmSelect(event.target.value); setPage("overview"); }}><option value="" disabled>Selecione uma fazenda</option>{farms.map((farm) => <option key={farm.id} value={farm.id}>{farm.name} · {farm.state}</option>)}</select><Icon name="down" size={15}/></label>
+      <nav className="main-nav" aria-label="Menu principal">{navGroups.map((group) => <div className="nav-group" key={group.title}><h2>{group.title}</h2>{group.items.map((item) => <button key={item.key} className={`nav-link ${page === item.key ? "nav-active" : ""}`} onClick={() => { setPage(item.key); closeMobile(); }}><Icon name={item.icon}/><span>{item.label}</span>{item.key === "alerts" && alertCount > 0 && <span className="nav-alert-count">{alertCount}</span>}</button>)}</div>)}</nav>
       <div className="sidebar-bottom"><button className="profile-trigger" title="Editar minha conta" onClick={onAccount}><div className="profile-avatar">{user.name.trim().charAt(0).toLocaleUpperCase("pt-BR") || "A"}</div><div className="profile-copy"><strong>{user.name}</strong><span>{user.email}</span></div></button><button className="icon-button logout-button" title="Sair" aria-label="Sair" onClick={onLogout}><Icon name="logout"/></button></div>
     </aside>
   </>;
 }
 
-function Header({ page, farm, onAdd, onMenu }: { page: Page; farm?: Farm; onAdd: () => void; onMenu: () => void }) {
+function Header({ page, onAdd, onMenu }: { page: Page; onAdd: () => void; onMenu: () => void }) {
+  const [syncMinutes, setSyncMinutes] = useState(0);
+  useEffect(() => { const timer = window.setInterval(() => setSyncMinutes((minutes) => minutes + 1), 60_000); return () => window.clearInterval(timer); }, []);
   const title: Record<Page, string> = { overview: "Visão geral", farms: "Fazendas", fields: "Talhões", seasons: "Safras", operations: "Operações", sensors: "Sensores", alerts: "Alertas" };
-  const addLabel = page === "farms" ? "Nova fazenda" : page === "fields" ? "Novo talhão" : page === "seasons" ? "Nova safra" : page === "operations" ? "Nova operação" : page === "sensors" ? "Vincular sensor" : "Adicionar fazenda";
-  return <header className="topbar"><div className="topbar-title"><button className="icon-button mobile-menu" aria-label="Abrir menu" onClick={onMenu}><Icon name="menu"/></button><div><p className="breadcrumb">AGROPULSE <span>/</span> {title[page].toLocaleUpperCase("pt-BR")}</p><h1>{page === "overview" && farm ? farm.name : title[page]}</h1></div></div><div className="topbar-actions"><span className="date-chip"><Icon name="calendar" size={16}/>{new Intl.DateTimeFormat("pt-BR", { dateStyle: "medium" }).format(new Date())}</span>{page !== "alerts" && <button className="button primary header-add" onClick={onAdd}><Icon name="plus" size={17}/>{addLabel}</button>}</div></header>;
+  const addLabel: Partial<Record<Page, string>> = { farms: "Nova fazenda", fields: "Novo talhão", seasons: "Nova safra", operations: "Nova operação", sensors: "Vincular sensor", alerts: "Nova regra" };
+  return <header className="topbar"><div className="topbar-title"><button className="icon-button mobile-menu" aria-label="Abrir menu" onClick={onMenu}><Icon name="menu"/></button><p className="breadcrumb">AgroPulse <span>/</span> {title[page]}</p></div><div className="topbar-actions"><span className="sync-indicator"><i/>{syncMinutes ? `Sincronizado há ${syncMinutes} min` : "Sincronizado agora"}</span>{addLabel[page] && <button className="button primary header-add" onClick={onAdd}><Icon name="plus" size={17}/>{addLabel[page]}</button>}</div></header>;
 }
 
-function MetricCard({ label, value, unit, icon, tone, caption }: { label: string; value: string; unit?: string; icon: string; tone: string; caption: string }) {
-  return <article className="metric-card"><div className={`metric-icon ${tone}`}><Icon name={icon} size={20}/></div><p className="metric-label">{label}</p><div className="metric-value">{value}<span>{unit}</span></div><p className="metric-caption">{caption}</p></article>;
+function MetricCard({ label, value, unit, caption, tone = "default", detail }: { label: string; value: string; unit?: string; caption: string; tone?: string; detail?: ReactNode }) {
+  return <article className={`metric-card ${tone}`}><p className="metric-label">{label}</p><div className="metric-value">{value}<span>{unit}</span></div>{detail}{<p className="metric-caption">{caption}</p>}</article>;
 }
 
 function EmptyState({ title, body, action, onAction, icon = "farm" }: { title: string; body: string; action?: string; onAction?: () => void; icon?: string }) {
   return <div className="empty-state"><span className="empty-state-icon"><Icon name={icon} size={27}/></span><h3>{title}</h3><p>{body}</p>{action && onAction && <button className="button primary" onClick={onAction}><Icon name="plus" size={16}/>{action}</button>}</div>;
 }
 
-function FarmCard({ farm, fieldsCount, area, statsKnown, onSelect, onEdit, onDelete }: { farm: Farm; fieldsCount: number; area: number; statsKnown: boolean; onSelect: () => void; onEdit: () => void; onDelete: () => void }) {
-  return <article className="farm-card"><button className="farm-card-main" onClick={onSelect}><div className="farm-card-image"><div className="farm-card-sun"/><div className="farm-card-field-lines"/><span className="farm-card-badge"><Icon name="map" size={14}/>{farm.state}</span></div><div className="farm-card-content"><div className="farm-card-title-row"><h3>{farm.name}</h3><span className="card-more"><Icon name="chevron" size={17}/></span></div><p>{farmPlace(farm)}</p><div className="farm-card-stats">{statsKnown ? <><span><Icon name="field" size={15}/>{fieldsCount} {fieldsCount === 1 ? "talhão" : "talhões"}</span><span><Icon name="map" size={15}/>{formatNumber(area, 1)} ha</span></> : <span><Icon name="field" size={15}/>Abra para ver as áreas cadastradas</span>}</div></div></button><div className="farm-card-actions"><button onClick={onEdit}><Icon name="edit" size={15}/> Editar</button><button className="danger-link" onClick={onDelete}><Icon name="trash" size={15}/> Excluir</button></div></article>;
+function FarmCard({ farm, fields, fieldsCount, area, statsKnown, onSelect, onEdit, onDelete }: { farm: Farm; fields: Field[]; fieldsCount: number; area: number; statsKnown: boolean; onSelect: () => void; onEdit: () => void; onDelete: () => void }) {
+  const center: [number, number] = [farm.location.coordinates[1], farm.location.coordinates[0]];
+  const cultureAreas = Object.entries(fields.reduce<Record<string, number>>((acc, field) => { acc[field.crop] = (acc[field.crop] ?? 0) + field.area_ha; return acc; }, {}));
+  const totalArea = cultureAreas.reduce((sum, [, value]) => sum + value, 0) || 1;
+  return <article className="farm-card"><div className="farm-card-main"><div className="farm-card-image"><FieldMap fields={fields} center={center} mini/><span className="farm-card-badge">{farm.state}</span></div><div className="farm-card-content"><div className="farm-card-title-row"><h3>{farm.name}</h3></div><p>{farmPlace(farm)}</p><div className="farm-card-stats">{statsKnown ? <><span>{fieldsCount} {fieldsCount === 1 ? "talhão" : "talhões"}</span><span>{formatNumber(area, 1)} ha</span></> : <span>Área ainda não carregada</span>}<span>— sensores · — alertas</span></div><div className="farm-culture-bar">{cultureAreas.map(([crop, value]) => <i key={crop} className={`crop-${crop}`} style={{ width: `${value / totalArea * 100}%` }} title={`${crops[crop as Field["crop"]] ?? crop}: ${formatNumber(value, 1)} ha`}/> )}</div></div></div><div className="farm-card-actions"><button type="button" className="button secondary" onClick={onSelect}>Abrir</button><details className="card-menu"><summary aria-label={`Mais ações para ${farm.name}`}>⋯</summary><div><button type="button" aria-label={`Editar fazenda ${farm.name}`} onClick={onEdit}>Editar</button><ConfirmAction prompt={`Excluir a fazenda “${farm.name}” e os talhões vinculados?`} onConfirm={onDelete} className="danger-link" ariaLabel={`Excluir fazenda ${farm.name}`}>Excluir</ConfirmAction></div></details></div></article>;
 }
 
 function FieldRow({ field, farm, selected, onSelect, onEdit, onDelete }: { field: Field; farm?: Farm; selected?: boolean; onSelect: () => void; onEdit: () => void; onDelete: () => void }) {
-  return <div className={`field-row ${selected ? "field-row-selected" : ""}`}><button className="field-row-main" onClick={onSelect}><span className={`crop-symbol crop-${field.crop}`}><Icon name="leaf" size={18}/></span><span className="field-name-block"><strong>{field.name}</strong><small>{farm?.name ?? "Fazenda"} · {crops[field.crop] ?? field.crop}</small></span><span className="field-area">{formatNumber(field.area_ha, 1)} <small>ha</small></span></button><div className="field-actions"><button className="icon-button" title="Editar talhão" aria-label="Editar talhão" onClick={onEdit}><Icon name="edit" size={16}/></button><button className="icon-button danger-icon" title="Excluir talhão" aria-label="Excluir talhão" onClick={onDelete}><Icon name="trash" size={16}/></button></div></div>;
-}
-
-function FieldSelector({ fields, selectedId, onChange }: { fields: Field[]; selectedId: string; onChange: (id: string) => void }) {
-  return <label className="farm-select-wrap field-select-wrap"><span>Talhão selecionado</span><select value={selectedId} disabled={!fields.length} onChange={(event) => onChange(event.target.value)}>{fields.map((field) => <option key={field.id} value={field.id}>{field.name} · {crops[field.crop]}</option>)}</select><Icon name="down" size={16}/></label>;
+  return <div className={`field-row ${selected ? "field-row-selected" : ""}`} onMouseEnter={onSelect}><button type="button" className="field-row-main" onClick={onSelect}><span className={`crop-symbol crop-${field.crop}`}><Icon name="leaf" size={18}/></span><span className="field-name-block"><strong>{field.name}</strong><small>{farm?.name ?? "Fazenda"} · {crops[field.crop] ?? field.crop}</small></span><span className="field-area">{formatNumber(field.area_ha, 1)} <small>ha</small></span></button><details className="field-actions card-menu"><summary aria-label={`Mais ações para ${field.name}`}>⋯</summary><div><button type="button" aria-label={`Editar talhão ${field.name}`} onClick={onEdit}>Editar</button><ConfirmAction prompt={`Excluir o talhão “${field.name}”?`} onConfirm={onDelete} className="danger-link" ariaLabel={`Excluir talhão ${field.name}`}>Excluir</ConfirmAction></div></details></div>;
 }
 
 function FarmForm({ mode, farm, onClose, onSave, busy }: { mode: "create" | "edit"; farm?: Farm; onClose: () => void; onSave: (body: object) => Promise<void>; busy: boolean }) {
@@ -248,15 +255,16 @@ function FieldForm({ mode, field, farm, onClose, onSave, busy }: { mode: "create
 }
 
 function Modal({ title, subtitle, onClose, children, wide = false }: { title: string; subtitle: string; onClose: () => void; children: ReactNode; wide?: boolean }) {
-  useEffect(() => { const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") onClose(); }; window.addEventListener("keydown", onKey); return () => window.removeEventListener("keydown", onKey); }, [onClose]);
-  return <div className="modal-scrim" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}><section className={`modal-card ${wide ? "modal-wide" : ""}`} role="dialog" aria-modal="true" aria-labelledby="modal-title"><div className="modal-heading"><div><h2 id="modal-title">{title}</h2><p>{subtitle}</p></div><button className="icon-button" aria-label="Fechar" onClick={onClose}><Icon name="close"/></button></div>{children}</section></div>;
+  const dialogRef = useRef<HTMLElement | null>(null);
+  useDialogFocus(dialogRef, onClose);
+  return <div className="modal-scrim" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}><section ref={dialogRef} tabIndex={-1} className={`modal-card ${wide ? "modal-wide" : ""}`} role="dialog" aria-modal="true" aria-labelledby="modal-title"><div className="modal-heading"><div><h2 id="modal-title">{title}</h2><p>{subtitle}</p></div><button type="button" className="icon-button" aria-label="Fechar" onClick={onClose}><Icon name="close"/></button></div>{children}</section></div>;
 }
 
 const states = ["AC","AL","AP","AM","BA","CE","DF","ES","GO","MA","MT","MS","MG","PA","PB","PR","PE","PI","RJ","RN","RS","RO","RR","SC","SP","SE","TO"];
 
-function AlertRulesPanel({ rules, fields, onSave, onToggle, onDelete, supported, busy }: { rules: AlertRule[]; fields: Field[]; onSave: (rule: AlertRule | undefined, body: object) => Promise<void>; onToggle: (rule: AlertRule) => void; onDelete: (rule: AlertRule) => void; supported: boolean; busy: boolean }) {
+function AlertRulesPanel({ rules, fields, onSave, onToggle, onDelete, supported, busy, createRequest }: { rules: AlertRule[]; fields: Field[]; onSave: (rule: AlertRule | undefined, body: object) => Promise<void>; onToggle: (rules: AlertRule[]) => void; onDelete: (rules: AlertRule[]) => void; supported: boolean; busy: boolean; createRequest: number }) {
   const [formOpen, setFormOpen] = useState(false); const [editingRule, setEditingRule] = useState<AlertRule>(); const [error, setError] = useState("");
-  const openCreateForm = () => { setError(""); if (formOpen && !editingRule) { setFormOpen(false); return; } setEditingRule(undefined); setFormOpen(true); };
+  useEffect(() => { if (createRequest > 0) { setError(""); setEditingRule(undefined); setFormOpen(true); } }, [createRequest]);
   const openEditForm = (rule: AlertRule) => { setEditingRule(rule); setError(""); setFormOpen(true); };
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault(); setError(""); const data = new FormData(event.currentTarget);
@@ -267,37 +275,82 @@ function AlertRulesPanel({ rules, fields, onSave, onToggle, onDelete, supported,
     try { await onSave(editingRule, editingRule ? body : { ...body, active: true }); setFormOpen(false); setEditingRule(undefined); }
     catch (caught) { setError(detailOf(caught)); }
   };
-  return <section className="panel alert-rules-panel"><div className="panel-heading"><div><span className="eyebrow muted-eyebrow">AUTOMAÇÃO</span><h2>Regras de alerta</h2><p>Defina limites para acompanhar condições importantes.</p></div><button type="button" className="button secondary compact-button" disabled={!supported || !fields.length || busy} onClick={openCreateForm}><Icon name="plus" size={16}/> {formOpen && !editingRule ? "Cancelar" : "Nova regra"}</button></div>
+  const groupedRules = Object.values(rules.reduce<Record<string, AlertRule[]>>((groups, rule) => { const key = `${rule.metric}|${rule.operator}|${rule.threshold}|${rule.window_minutes}`; groups[key] ??= []; groups[key].push(rule); return groups; }, {}));
+  return <section className="panel alert-rules-panel"><div className="panel-heading"><div><h2>Regras</h2><p>Defina limites para acompanhar condições importantes.</p></div>{formOpen && !editingRule && <button type="button" className="text-button" disabled={busy} onClick={() => setFormOpen(false)}>Cancelar</button>}</div>
     {!supported && <div className="integration-note"><Icon name="clock" size={16}/> Regras de alerta estarão disponíveis quando a API for atualizada.</div>}
     {formOpen && <form key={editingRule ? entityId(editingRule) : "new-rule"} className="rule-form" onSubmit={submit}><label>Talhão<select name="field_id" defaultValue={editingRule?.field_id ?? fields[0]?.id} required>{fields.map((field) => <option key={field.id} value={field.id}>{field.name}</option>)}</select></label><label>Métrica<select name="metric" defaultValue={editingRule?.metric ?? metrics[0].value}>{metrics.map((metric) => <option key={metric.value} value={metric.value}>{metric.label}</option>)}</select></label><label>Condição<select name="operator" defaultValue={editingRule?.operator ?? "lt"}><option value="lt">Abaixo de</option><option value="gt">Acima de</option></select></label><label>Limite<input name="threshold" type="number" step="any" defaultValue={editingRule?.threshold ?? 30} required/></label><label>Janela (minutos)<input name="window_minutes" type="number" min="1" max="525600" step="1" defaultValue={editingRule?.window_minutes ?? 15} required/></label><div className="rule-form-actions"><button type="button" className="text-button" disabled={busy} onClick={() => { setFormOpen(false); setEditingRule(undefined); }}>Cancelar</button><button className="button primary compact-button" disabled={busy}>{busy ? "Salvando…" : editingRule ? "Salvar alterações" : "Criar regra"}</button></div>{error && <div className="inline-error rule-error" role="alert">{error}</div>}</form>}
     {supported && rules.length === 0 && !formOpen && <div className="panel-empty"><span className="soft-icon"><Icon name="bell"/></span><div><strong>Nenhuma regra configurada</strong><p>Crie uma regra para receber alertas sobre leituras fora do esperado.</p></div></div>}
-    {supported && rules.length > 0 && <div className="rules-list">{rules.map((rule) => { const id = entityId(rule); const metric = metrics.find((item) => item.value === rule.metric); const field = fields.find((item) => item.id === rule.field_id); return <div className="rule-row" key={id}><span className="rule-state"><span className={rule.active === false ? "rule-dot paused" : "rule-dot"}/></span><div className="rule-copy"><strong>{metric?.label ?? rule.metric} {rule.operator === "lt" ? "abaixo de" : "acima de"} {formatNumber(rule.threshold, 1)} {metric?.unit}</strong><small>{field?.name ?? "Talhão"} · janela de {rule.window_minutes} min</small></div><button type="button" className="icon-button" aria-label="Editar regra" title="Editar regra" disabled={busy} onClick={() => openEditForm(rule)}><Icon name="edit" size={15}/></button><button type="button" className={`toggle ${rule.active === false ? "toggle-off" : ""}`} aria-label={rule.active === false ? "Ativar regra" : "Pausar regra"} disabled={busy} onClick={() => onToggle(rule)}><span/></button><button type="button" className="icon-button danger-icon" aria-label="Excluir regra" title="Excluir regra" disabled={busy} onClick={() => onDelete(rule)}><Icon name="trash" size={16}/></button></div>; })}</div>}
+    {supported && rules.length > 0 && <div className="rules-list">{groupedRules.map((group) => { const rule = group[0]; const metric = metrics.find((item) => item.value === rule.metric); const active = group.every((item) => item.active !== false); return <div className="rule-row" key={`${rule.metric}-${rule.operator}-${rule.threshold}-${rule.window_minutes}`}><div className="rule-copy"><strong>{metric?.label ?? rule.metric} {rule.operator === "lt" ? "abaixo de" : "acima de"} {formatNumber(rule.threshold, 1)} {metric?.unit} por {rule.window_minutes} min</strong><div className="rule-field-chips">{group.map((item) => { const field = fields.find((candidate) => candidate.id === item.field_id); return <span className={`rule-field-chip crop-${field?.crop ?? "soja"}`} key={entityId(item)}>{field?.name ?? "Talhão"}</span>; })}</div></div><button type="button" className="icon-button" aria-label="Editar regra" title="Editar regra" disabled={busy} onClick={() => openEditForm(rule)}><Icon name="edit" size={15}/></button><button type="button" className={`toggle ${active ? "" : "toggle-off"}`} aria-label={active ? "Pausar regra" : "Ativar regra"} disabled={busy} onClick={() => onToggle(group)}><span/></button><details className="card-menu"><summary aria-label="Mais ações da regra">⋯</summary><div><ConfirmAction prompt={`Excluir esta regra dos ${group.length} talhões vinculados?`} onConfirm={() => onDelete(group)} className="danger-link">Excluir</ConfirmAction></div></details></div>; })}</div>}
   </section>;
 }
 
-function SeasonCollection({ field, fields, selectedFieldId, onFieldChange, seasons, loading, error, onAdd, onEdit, onDelete, onAddFarm }: {
-  field?: Field; fields: Field[]; selectedFieldId: string; onFieldChange: (id: string) => void; seasons: Season[]; loading: boolean; error: string;
-  onAdd: () => void; onEdit: (season: Season) => void; onDelete: (season: Season) => void; onAddFarm: () => void;
+function SeasonCollection({ fields, selectedFieldId, seasons, loading, error, onFieldChange, onPlanField, onEdit, onDelete }: {
+  fields: Field[]; seasons: Season[]; loading: boolean; error: string;
+  selectedFieldId: string; onFieldChange: (id: string) => void; onPlanField: (fieldId: string) => void; onEdit: (season: Season) => void; onDelete: (season: Season) => void;
 }) {
-  return <section className="collection-page"><div className="collection-heading"><div><p>PLANEJAMENTO AGRÍCOLA</p><h2>Safras</h2><span>Planeje o ciclo produtivo e compare produtividade prevista e realizada.</span></div><div className="collection-actions"><FieldSelector fields={fields} selectedId={selectedFieldId} onChange={onFieldChange}/><button className="button primary" disabled={!field} onClick={onAdd}><Icon name="plus" size={17}/>Nova safra</button></div></div>{error && <div className="workspace-warning"><Icon name="bell" size={17}/>{error}</div>}{!fields.length ? <EmptyState title="Nenhum talhão disponível" body="Cadastre uma fazenda e um talhão antes de planejar uma safra." action="Cadastrar fazenda" onAction={onAddFarm}/> : loading ? <div className="panel list-loading"><span className="spinner"/>Carregando safras…</div> : seasons.length ? <div className="records-grid">{seasons.map((season) => <article className="record-card" key={season.id}><div className="record-card-top"><span className="record-icon crop-symbol"><Icon name="leaf"/></span><span className={`status-badge season-${season.status}`}>{seasonStatusLabel[season.status]}</span></div><h3>{season.label}</h3><p className="record-subtitle">{field?.name} · {crops[season.crop ?? field?.crop ?? "soja"]}</p><div className="record-facts"><span><small>Plantio</small><strong>{dateLabel(season.planting_date)}</strong></span><span><small>Colheita</small><strong>{dateLabel(season.harvest_date ?? undefined)}</strong></span></div><div className="yield-comparison"><div><span>Esperada</span><strong>{season.expected_yield_kg_ha == null ? "—" : `${formatNumber(season.expected_yield_kg_ha, 0)} kg/ha`}</strong></div><div><span>Realizada</span><strong>{season.yield_kg_ha == null ? "—" : `${formatNumber(season.yield_kg_ha, 0)} kg/ha`}</strong></div></div><div className="record-actions"><button onClick={() => onEdit(season)}><Icon name="edit" size={15}/>Editar</button><button className="danger-link" onClick={() => onDelete(season)}><Icon name="trash" size={15}/>Excluir</button></div></article>)}</div> : <EmptyState title="Nenhuma safra para este talhão" body="Crie uma safra para organizar datas e acompanhar o rendimento esperado." action="Planejar safra" onAction={onAdd}/>}</section>;
+  const [year, setYear] = useState("2026/27");
+  const [fieldFilter, setFieldFilter] = useState(selectedFieldId);
+  const months = ["Jul", "Ago", "Set", "Out", "Nov", "Dez", "Jan", "Fev", "Mar", "Abr", "Mai", "Jun"];
+  const startYear = Number(year.slice(0, 4));
+  const cycleLabel = (dateValue: string) => { const date = new Date(dateValue); const first = date.getUTCMonth() >= 6 ? date.getUTCFullYear() : date.getUTCFullYear() - 1; return `${first}/${String(first + 1).slice(-2)}`; };
+  const currentMonth = (new Date().getMonth() + 6) % 12 + 1;
+  const timelineSeasons = seasons.filter((season) => cycleLabel(season.planting_date) === year);
+  const visibleFields = fieldFilter === "all" ? fields : fields.filter((item) => item.id === fieldFilter);
+  const selectedSeason = fieldFilter === "all" ? undefined : timelineSeasons.find((season) => season.field_id === fieldFilter);
+  useEffect(() => { setFieldFilter(selectedFieldId); }, [selectedFieldId]);
+  return <section className="collection-page seasons-page"><div className="collection-heading"><div><h2>Safras</h2><span>Planeje o ciclo produtivo e compare produtividade prevista e realizada.</span></div><div className="season-heading-controls"><label className="season-field-select"><span>Talhão</span><select aria-label="Filtrar safras por talhão" value={fieldFilter} onChange={(event) => { const value = event.target.value; setFieldFilter(value); if (value !== "all") onFieldChange(value); }}><option value="all">Todos os talhões</option>{fields.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label><div className="season-year-tabs" role="group" aria-label="Ano-safra">{[`${startYear}/${String(startYear + 1).slice(-2)}`, `${startYear - 1}/${String(startYear).slice(-2)}`].map((value) => <button type="button" key={value} className={year === value ? "active" : ""} onClick={() => setYear(value)}>{value}</button>)}</div></div></div>
+    {error && <div className="workspace-warning"><Icon name="bell" size={17}/>{error}</div>}
+    {!fields.length ? <div className="empty-state"><h3>Nenhum talhão disponível</h3><p>Cadastre uma fazenda e um talhão antes de planejar uma safra.</p></div> : loading ? <div className="panel list-loading"><span className="skeleton"/>Carregando safras…</div> : <div className="season-page-grid"><section className="panel season-timeline"><div className="season-grid-header"><strong>Talhão</strong>{months.map((month) => <span key={month}>{month}</span>)}</div>{visibleFields.map((field) => {
+      const season = timelineSeasons.find((item) => item.field_id === field.id);
+      const start = season ? (new Date(season.planting_date).getUTCMonth() + 6) % 12 + 1 : currentMonth;
+      const end = season?.harvest_date ? (new Date(season.harvest_date).getUTCMonth() + 6) % 12 + 1 : start;
+      const span = season ? Math.max(1, (end - start + 12) % 12 + 1) : 1;
+      return <div className="season-grid-row" key={field.id}><div className="season-field-name"><span className={`overview-field-color crop-${field.crop}`}/><span>{field.name}</span></div><div className="season-month-track">{months.map((month) => <i key={month}/>)}{season ? <button type="button" className={`season-bar crop-${season.crop ?? field.crop}`} style={{ gridColumn: `${start} / span ${span}` }} onClick={() => onEdit(season)} title={`${dateLabel(season.planting_date)}–${dateLabel(season.harvest_date ?? undefined)}`}>{season.label}</button> : <button type="button" className="season-unplanned" style={{ gridColumn: `${currentMonth} / span ${Math.min(3, 13 - currentMonth)}` }} onClick={() => onPlanField(field.id)}>Sem safra planejada · Planejar</button>}</div></div>;
+    })}</section><aside className="panel season-yield-panel"><h3>Produtividade</h3>{selectedSeason ? <><p>{fields.find((field) => field.id === selectedSeason.field_id)?.name} · {selectedSeason.label}</p><div className="yield-row"><span>Prevista</span><strong>{selectedSeason.expected_yield_kg_ha == null ? "—" : `${formatNumber(selectedSeason.expected_yield_kg_ha, 0)} kg/ha`}</strong><i style={{ width: `${Math.min((selectedSeason.expected_yield_kg_ha ?? 0) / Math.max(selectedSeason.expected_yield_kg_ha ?? 1, 1) * 100, 100)}%` }}/></div><div className="yield-row"><span>Realizada</span><strong>{selectedSeason.yield_kg_ha == null ? "—" : `${formatNumber(selectedSeason.yield_kg_ha, 0)} kg/ha`}</strong><i style={{ width: `${Math.min((selectedSeason.yield_kg_ha ?? 0) / Math.max(selectedSeason.expected_yield_kg_ha ?? selectedSeason.yield_kg_ha ?? 1, 1) * 100, 100)}%` }}/></div><div className="record-actions"><button type="button" onClick={() => onEdit(selectedSeason)}>Editar</button><ConfirmAction prompt={`Excluir a safra “${selectedSeason.label}”?`} onConfirm={() => onDelete(selectedSeason)} className="danger-link">Excluir</ConfirmAction></div></> : <p>Sem safra registrada para {year}.</p>}</aside></div>}
+  </section>;
 }
 
-function OperationCollection({ field, fields, selectedFieldId, onFieldChange, operations, seasons, loading, error, onAdd, onEdit, onDelete, onAddFarm }: {
+function OperationCollection({ field, fields, selectedFieldId, onFieldChange, operations, seasons, loading, error, onQuickAdd, onEdit, onDelete, onAddFarm }: {
   field?: Field; fields: Field[]; selectedFieldId: string; onFieldChange: (id: string) => void; operations: Operation[]; seasons: Season[]; loading: boolean; error: string;
-  onAdd: () => void; onEdit: (operation: Operation) => void; onDelete: (operation: Operation) => void; onAddFarm: () => void;
+  onQuickAdd: (type: Operation["type"]) => void; onEdit: (operation: Operation) => void; onDelete: (operation: Operation) => void; onAddFarm: () => void;
 }) {
-  return <section className="collection-page"><div className="collection-heading"><div><p>DIÁRIO DE CAMPO</p><h2>Operações</h2><span>Registre atividades, custos e observações por talhão.</span></div><div className="collection-actions"><FieldSelector fields={fields} selectedId={selectedFieldId} onChange={onFieldChange}/><button className="button primary" disabled={!field} onClick={onAdd}><Icon name="plus" size={17}/>Nova operação</button></div></div>{error && <div className="workspace-warning"><Icon name="bell" size={17}/>{error}</div>}{!fields.length ? <EmptyState title="Nenhum talhão disponível" body="Cadastre uma fazenda e um talhão antes de registrar operações." action="Cadastrar fazenda" onAction={onAddFarm}/> : loading ? <div className="panel list-loading"><span className="spinner"/>Carregando operações…</div> : operations.length ? <div className="panel operations-timeline">{operations.map((operation) => { const season = seasons.find((item) => item.id === operation.season_id); const note = operation.details?.observacoes; return <article className="operation-row" key={operation.id}><div className="timeline-marker"><span><Icon name="activity" size={17}/></span></div><div className="operation-info"><div className="operation-title"><h3>{operationTypeLabel[operation.type]}</h3><span>{dateLabel(operation.date)}</span></div><p>{season ? `Safra ${season.label}` : field?.name}{operation.cost_brl == null ? "" : ` · ${new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(operation.cost_brl)}`}</p>{typeof note === "string" && note && <small>{note}</small>}</div><div className="record-actions"><button onClick={() => onEdit(operation)} aria-label="Editar operação"><Icon name="edit" size={15}/></button><button className="danger-link" onClick={() => onDelete(operation)} aria-label="Excluir operação"><Icon name="trash" size={15}/></button></div></article>; })}</div> : <EmptyState title="Nenhuma operação registrada" body="Registre plantio, adubação, aplicação, irrigação ou colheita para manter o diário da área atualizado." action="Registrar operação" onAction={onAdd}/>}</section>;
+  const [typeFilter, setTypeFilter] = useState<Operation["type"] | "all">("all");
+  const types: Operation["type"][] = ["plantio", "adubacao", "aplicacao", "irrigacao", "colheita"];
+  const typeIcons: Record<Operation["type"], string> = { plantio: "wheat", adubacao: "leaf", aplicacao: "activity", irrigacao: "droplet", colheita: "check" };
+  const visibleOperations = operations.filter((operation) => typeFilter === "all" || operation.type === typeFilter);
+  const totalCost = operations.reduce((sum, operation) => sum + (operation.cost_brl ?? 0), 0);
+  const grouped = visibleOperations.reduce<Record<string, Operation[]>>((acc, operation) => { const key = new Date(operation.date).toISOString().slice(0, 10); acc[key] ??= []; acc[key].push(operation); return acc; }, {});
+  return (
+    <section className="collection-page operations-page">
+      <div className="collection-heading"><div><h2>Operações</h2><span>Registre atividades, custos e observações por talhão.</span></div></div>
+      {error && <div className="workspace-warning"><Icon name="bell" size={17}/>{error}</div>}
+      {!fields.length ? <EmptyState title="Nenhum talhão disponível" body="Cadastre uma fazenda e um talhão antes de registrar operações." action="Cadastrar fazenda" onAction={onAddFarm}/> : <>
+        <div className="operations-summary"><div><span>Nº de operações</span><strong>{operations.length}</strong></div><div><span>Custo total</span><strong>{new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(totalCost)}</strong></div><div><span>Último registro</span><strong>{operations[0] ? dateLabel(operations[0].date) : "—"}</strong></div></div>
+        <div className="operation-filters" role="group" aria-label="Filtrar operações por tipo">{[{ value: "all", label: "Todas" }, ...types.map((value) => ({ value, label: operationTypeLabel[value] }))].map((item) => <button type="button" key={item.value} aria-pressed={typeFilter === item.value} className={`filter-chip type-chip type-${item.value} ${typeFilter === item.value ? "active" : ""}`} onClick={() => setTypeFilter(item.value as Operation["type"] | "all")}>{item.value !== "all" && <Icon name={typeIcons[item.value as Operation["type"]]} size={15}/>} {item.label}</button>)}</div>
+        <div className="operation-filters field-filter-chips" role="group" aria-label="Filtrar por talhão">{fields.map((item) => <button type="button" key={item.id} aria-pressed={selectedFieldId === item.id} className={`filter-chip ${selectedFieldId === item.id ? "active" : ""}`} onClick={() => onFieldChange(item.id)}>{item.name}</button>)}</div>
+        {loading ? <div className="panel list-loading"><span className="skeleton"/>Carregando operações…</div> : visibleOperations.length ? <div className="operations-timeline">{Object.entries(grouped).map(([day, items]) => <section className="operation-day" key={day}><time className="operation-day-date">{dateLabel(day)}</time><div className="operation-day-items">{items.map((operation) => { const season = seasons.find((item) => item.id === operation.season_id); const note = operation.details?.observacoes; return <article className="operation-row" key={operation.id}><div className="operation-info"><div className="operation-title"><h3>{operationTypeLabel[operation.type]}</h3><span>{dateLabel(operation.date, true)}</span></div><p>{season ? `Safra ${season.label}` : field?.name}{operation.cost_brl == null ? "" : ` · ${new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(operation.cost_brl)}`}</p>{typeof note === "string" && note && <small>{note}</small>}</div><div className="record-actions"><button type="button" onClick={() => onEdit(operation)} aria-label={`Editar operação ${operationTypeLabel[operation.type]} de ${dateLabel(operation.date)}`}><Icon name="edit" size={15}/></button><ConfirmAction prompt={`Excluir a operação ${operationTypeLabel[operation.type]} de ${dateLabel(operation.date)}?`} onConfirm={() => onDelete(operation)} className="icon-confirm" ariaLabel={`Excluir operação ${operationTypeLabel[operation.type]} de ${dateLabel(operation.date)}`}><Icon name="trash" size={15}/></ConfirmAction></div></article>; })}</div></section>)}</div> : operations.length ? <div className="panel-empty operation-empty" role="status"><strong>Nenhuma operação encontrada</strong><p>Não há operações do tipo selecionado para este talhão.</p><button type="button" className="text-button" onClick={() => setTypeFilter("all")}>Limpar filtro</button></div> : <div className="quick-register"><strong>Registro rápido</strong>{types.map((type) => <button type="button" key={type} className={`quick-${type}`} onClick={() => onQuickAdd(type)}><Icon name={typeIcons[type]}/>{operationTypeLabel[type]}</button>)}</div>}
+      </>}
+    </section>
+  );
 }
 
-function SensorCollection({ field, fields, selectedFieldId, onFieldChange, sensors, loading, error, onAdd, onEdit, onToggle, onDelete, onAddFarm }: {
-  field?: Field; fields: Field[]; selectedFieldId: string; onFieldChange: (id: string) => void; sensors: Sensor[]; loading: boolean; error: string;
-  onAdd: () => void; onEdit: (sensor: Sensor) => void; onToggle: (sensor: Sensor) => void; onDelete: (sensor: Sensor) => void; onAddFarm: () => void;
+function SensorCollection({ fields, sensors, readings, loading, error, onEdit, onToggle, onDelete, onAddFarm }: {
+  fields: Field[]; sensors: Sensor[]; readings: Reading[]; loading: boolean; error: string;
+  onEdit: (sensor: Sensor) => void; onToggle: (sensor: Sensor) => void; onDelete: (sensor: Sensor) => void; onAddFarm: () => void;
 }) {
-  return <section className="collection-page"><div className="collection-heading"><div><p>TELEMETRIA</p><h2>Sensores</h2><span>Vincule os dispositivos do talhão para habilitar o fluxo de leituras.</span></div><div className="collection-actions"><FieldSelector fields={fields} selectedId={selectedFieldId} onChange={onFieldChange}/><button className="button primary" disabled={!field} onClick={onAdd}><Icon name="plus" size={17}/>Vincular sensor</button></div></div>{error && <div className="workspace-warning"><Icon name="bell" size={17}/>{error}</div>}{!fields.length ? <EmptyState title="Nenhum talhão disponível" body="Cadastre uma fazenda e um talhão antes de vincular sensores." action="Cadastrar fazenda" onAction={onAddFarm}/> : loading ? <div className="panel list-loading"><span className="spinner"/>Carregando sensores…</div> : <><div className="sensor-guidance"><span className="soft-icon"><Icon name="activity"/></span><p>Cadastre o <strong>device_id</strong> que o sensor ou simulador enviará. Leituras associadas ao mesmo identificador serão vinculadas a <strong>{field?.name}</strong>.</p></div>{sensors.length ? <div className="sensor-grid">{sensors.map((sensor) => <article className="sensor-card" key={sensor.id}><span className={`sensor-status ${sensor.active ? "sensor-active" : "sensor-inactive"}`}><i/>{sensor.active ? "Ativo" : "Desativado"}</span><div className="sensor-card-icon"><Icon name="activity" size={22}/></div><h3>{sensor.device_id}</h3><p>{field?.name} · {sensor.active ? "recebendo telemetria" : "leituras pausadas"}</p><div className="sensor-actions"><button className="secondary-action" onClick={() => onToggle(sensor)}>{sensor.active ? "Desativar" : "Ativar"}</button><button className="icon-button" aria-label="Editar sensor" onClick={() => onEdit(sensor)}><Icon name="edit" size={15}/></button><button className="icon-button danger-icon" aria-label="Remover sensor" onClick={() => onDelete(sensor)}><Icon name="trash" size={15}/></button></div></article>)}</div> : <EmptyState title="Nenhum sensor vinculado" body="Vincule o identificador do primeiro dispositivo para começar a receber dados de telemetria." action="Vincular primeiro sensor" onAction={onAdd} icon="activity"/>}</>}</section>;
+  const [copied, setCopied] = useState(false);
+  const queryExample = `curl -H "Authorization: Bearer <token>" http://localhost:8000/fields/<field_id>/readings/latest`;
+  const copyQuery = async () => { await navigator.clipboard.writeText(queryExample); setCopied(true); window.setTimeout(() => setCopied(false), 1800); };
+  const minuteLabel = (value?: string) => { if (!value) return "Sem leitura"; const mins = Math.max(0, Math.floor((Date.now() - new Date(value).getTime()) / 60_000)); return mins < 1 ? "agora" : `há ${mins} min`; };
+  const statusClass = (value?: string) => { if (!value) return "sensor-offline"; const age = Date.now() - new Date(value).getTime(); return age > 3_600_000 ? "sensor-offline" : age > 900_000 ? "sensor-delayed" : "sensor-online"; };
+  return <section className="collection-page sensors-page"><div className="collection-heading"><div><h2>Sensores</h2><span>Vincule dispositivos e acompanhe as leituras recentes.</span></div></div>{error && <div className="workspace-warning"><Icon name="bell" size={17}/>{error}</div>}{!fields.length ? <EmptyState title="Nenhum talhão disponível" body="Cadastre uma fazenda e um talhão antes de vincular sensores." action="Cadastrar fazenda" onAction={onAddFarm}/> : loading ? <div className="panel list-loading"><span className="skeleton"/>Carregando sensores…</div> : <div className="sensors-layout"><div className="sensor-table-wrap"><table className="sensor-table"><thead><tr><th>Status</th><th>device_id</th><th>Última leitura</th><th>Umidade atual</th><th>Ativo</th><th aria-label="Ações"/></tr></thead><tbody>{fields.map((field) => { const fieldSensors = sensors.filter((sensor) => sensor.field_id === field.id); return <Fragment key={field.id}><tr className="sensor-group-row"><td colSpan={6}><span className={`overview-field-color crop-${field.crop}`}/>{field.name} · {crops[field.crop]}</td></tr>{fieldSensors.map((sensor) => { const reading = readings.find((item) => item.sensor_id === sensor.id); const status = statusClass(reading?.ts); const actualStatus = sensor.active ? status : "sensor-inactive"; return <tr key={sensor.id}><td><span className={`sensor-status ${actualStatus}`}><i/>{!sensor.active ? "Inativo" : status === "sensor-offline" ? "Offline" : status === "sensor-delayed" ? "Atrasado" : "Online"}</span></td><td className="sensor-device-id">{sensor.device_id}</td><td>{minuteLabel(reading?.ts)}</td><td className="sensor-reading">{reading?.soil_moisture == null ? "—" : `${formatNumber(reading.soil_moisture, 1)}%`}</td><td><input className="switch" type="checkbox" checked={sensor.active} aria-label={sensor.active ? `Desativar ${sensor.device_id}` : `Ativar ${sensor.device_id}`} onChange={() => onToggle(sensor)}/></td><td><details className="card-menu"><summary aria-label={`Ações de ${sensor.device_id}`}>⋯</summary><div><button onClick={() => onEdit(sensor)}>Editar</button><ConfirmAction prompt={`Remover o sensor “${sensor.device_id}” deste talhão?`} onConfirm={() => onDelete(sensor)} className="danger-link">Excluir</ConfirmAction></div></details></td></tr>; })}{!fieldSensors.length && <tr><td colSpan={6} className="sensor-empty-row">Nenhum sensor vinculado a este talhão.</td></tr>}</Fragment>; })}</tbody></table></div><aside className="sensor-help-panel"><h3>Como enviar leituras</h3><p>A API atual oferece consulta de leituras recentes. O envio é feito pelo worker de ingestão do projeto; não há rota HTTP de ingestão cadastrada.</p><pre>{queryExample}</pre><button type="button" onClick={() => void copyQuery}>{copied ? "Copiado" : "Copiar consulta"}</button></aside></div>}</section>;
 }
 
-function AlertsFeed({ alerts, supported }: { alerts: Alert[]; supported: boolean }) {
-  return <section className="panel alerts-feed"><div className="panel-heading"><div><span className="eyebrow muted-eyebrow">ACOMPANHAMENTO</span><h2>Alertas recentes</h2><p>Eventos abertos nos seus talhões.</p></div><span className="count-pill">{alerts.length}</span></div>{!supported ? <div className="integration-note"><Icon name="clock" size={16}/> O histórico de alertas será exibido quando a API estiver integrada.</div> : alerts.length === 0 ? <div className="panel-empty"><span className="soft-icon"><Icon name="check"/></span><div><strong>Tudo tranquilo por aqui</strong><p>Não há alertas abertos para os talhões selecionados.</p></div></div> : <div className="alerts-list">{alerts.map((alert) => { const metric = metrics.find((item) => item.value === alert.metric); return <article className="alert-item" key={entityId(alert)}><span className={`alert-severity ${alert.status === "resolved" ? "resolved" : ""}`}><Icon name={alert.status === "resolved" ? "check" : "bell"} size={16}/></span><div className="alert-copy"><strong>{alert.title ?? `${metric?.label ?? alert.metric ?? "Leitura"} fora do limite`}</strong><p>{alert.message ?? `Leitura de ${formatNumber(alert.value ?? 0, 1)} ${metric?.unit ?? ""}; limite ${formatNumber(alert.threshold ?? 0, 1)} ${metric?.unit ?? ""}.`}</p><small>{dateLabel(alert.triggered_at ?? alert.created_at, true)}</small></div><span className={`status-badge ${alert.status === "resolved" ? "status-resolved" : "status-open"}`}>{alert.status === "resolved" ? "Resolvido" : "Aberto"}</span></article>; })}</div>}</section>;
+function AlertsFeed({ alerts, resolved, supported }: { alerts: Alert[]; resolved: Alert[]; supported: boolean }) {
+  const [tab, setTab] = useState<"open" | "resolved">("open");
+  const items = tab === "open" ? alerts : resolved;
+  const checkedAt = new Intl.DateTimeFormat("pt-BR", { hour: "2-digit", minute: "2-digit" }).format(new Date());
+  return <section className="panel alerts-feed"><div className="panel-heading"><h2>Eventos</h2></div><div className="alert-tabs" role="tablist"><button type="button" role="tab" aria-selected={tab === "open"} className={tab === "open" ? "active" : ""} onClick={() => setTab("open")}>Abertos ({alerts.length})</button><button type="button" role="tab" aria-selected={tab === "resolved"} className={tab === "resolved" ? "active" : ""} onClick={() => setTab("resolved")}>Resolvidos ({resolved.length})</button></div>{!supported ? <div className="integration-note"><Icon name="clock" size={16}/> O histórico de alertas será exibido quando a API estiver integrada.</div> : items.length === 0 ? <div className="alert-empty-line"><i/>{tab === "open" ? "Nenhum alerta aberto" : "Nenhum alerta resolvido"}<small>Última verificação às {checkedAt}</small></div> : <div className="alerts-list">{items.map((alert) => { const metric = metrics.find((item) => item.value === alert.metric); return <article className={`alert-item alert-${alert.severity ?? "attention"}`} key={entityId(alert)}><div className="alert-copy"><strong>{alert.title ?? `${metric?.label ?? alert.metric ?? "Leitura"} fora do limite`}</strong><p>{alert.message ?? `Leitura de ${formatNumber(alert.value ?? 0, 1)} ${metric?.unit ?? ""}; limite ${formatNumber(alert.threshold ?? 0, 1)} ${metric?.unit ?? ""}.`}</p><small>{dateLabel(alert.triggered_at ?? alert.created_at, true)}</small></div></article>; })}</div>}</section>;
 }
 
 function Toast({ notice, onDismiss }: { notice: Notice | null; onDismiss: () => void }) {
@@ -306,31 +359,45 @@ function Toast({ notice, onDismiss }: { notice: Notice | null; onDismiss: () => 
   return <div className={`toast toast-${notice.kind}`} role="status"><Icon name={notice.kind === "success" ? "check" : "bell"} size={17}/><span>{notice.text}</span><button className="icon-button" aria-label="Fechar mensagem" onClick={onDismiss}><Icon name="close" size={16}/></button></div>;
 }
 
+function ConfirmAction({ prompt, onConfirm, children, className = "", ariaLabel }: { prompt: string; onConfirm: () => void; children: ReactNode; className?: string; ariaLabel?: string }) {
+  const [open, setOpen] = useState(false);
+  const accessibleName = ariaLabel ?? (typeof children === "string" ? children : prompt);
+  return <span className={`confirm-action ${className}`}><button type="button" className="confirm-trigger" aria-label={accessibleName} onClick={() => setOpen((value) => !value)}>{children}</button>{open && <span className="confirm-popover" role="alertdialog"><span>{prompt}</span><span className="confirm-popover-actions"><button type="button" onClick={() => setOpen(false)}>Cancelar</button><button type="button" className="confirm-delete" onClick={() => { setOpen(false); onConfirm(); }}>Excluir</button></span></span>}</span>;
+}
+
 export default function Home() {
   const [token, setToken] = useState<string | null>(null);
   const [user, setUser] = useState<User | null>(null);
   const [sessionExpired, setSessionExpired] = useState(false);
+  const [accountDeleted, setAccountDeleted] = useState(false);
   const [ready, setReady] = useState(false);
   const [page, setPage] = useState<Page>("overview");
   const [farms, setFarms] = useState<Farm[]>([]);
-  const [farmStats, setFarmStats] = useState<Record<string, { fields: number; area: number }>>({});
+  const [farmFieldsById, setFarmFieldsById] = useState<Record<string, Field[]>>({});
   const [selectedFarmId, setSelectedFarmId] = useState("");
   const [fields, setFields] = useState<Field[]>([]);
   const [selectedFieldId, setSelectedFieldId] = useState("");
   const [seasons, setSeasons] = useState<Season[]>([]);
+  const [seasonTimeline, setSeasonTimeline] = useState<Season[]>([]);
+  const [seasonTimelineLoading, setSeasonTimelineLoading] = useState(false);
+  const [seasonRefresh, setSeasonRefresh] = useState(0);
   const [operations, setOperations] = useState<Operation[]>([]);
   const [sensors, setSensors] = useState<Sensor[]>([]);
+  const [allSensors, setAllSensors] = useState<Sensor[]>([]);
+  const [allSensorsLoading, setAllSensorsLoading] = useState(false);
+  const [sensorReadings, setSensorReadings] = useState<Reading[]>([]);
+  const [sensorRefresh, setSensorRefresh] = useState(0);
   const [recordsLoading, setRecordsLoading] = useState(false);
   const [recordsError, setRecordsError] = useState("");
   const [series, setSeries] = useState<SeriesPoint[]>([]);
   const [readings, setReadings] = useState<Reading[]>([]);
-  const [summary, setSummary] = useState<{ crop: string; fields: number; area_ha: number }[]>([]);
   const [metric, setMetric] = useState<(typeof metrics)[number]["value"]>("soil_moisture");
   const [days, setDays] = useState(7);
   const [farmModal, setFarmModal] = useState<FarmModal>(null);
   const [fieldModal, setFieldModal] = useState<FieldModal>(null);
   const [seasonModal, setSeasonModal] = useState<RecordModal<Season>>(null);
   const [operationModal, setOperationModal] = useState<RecordModal<Operation>>(null);
+  const [operationTypePreset, setOperationTypePreset] = useState<Operation["type"]>("plantio");
   const [sensorModal, setSensorModal] = useState<RecordModal<Sensor>>(null);
   const [accountOpen, setAccountOpen] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -339,15 +406,20 @@ export default function Home() {
   const [workspaceVersion, setWorkspaceVersion] = useState(0);
   const [seriesLoading, setSeriesLoading] = useState(false);
   const [seriesError, setSeriesError] = useState("");
+  const [seriesRetry, setSeriesRetry] = useState(0);
   const [alertRules, setAlertRules] = useState<AlertRule[]>([]);
   const [alerts, setAlerts] = useState<Alert[]>([]);
+  const [resolvedAlerts, setResolvedAlerts] = useState<Alert[]>([]);
   const [alertsSupported, setAlertsSupported] = useState(true);
   const [alertsError, setAlertsError] = useState("");
   const [notice, setNotice] = useState<Notice | null>(null);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [ruleCreateRequest, setRuleCreateRequest] = useState(0);
   const [farmSearch, setFarmSearch] = useState("");
   const [fieldSearch, setFieldSearch] = useState("");
+  const [cropFilter, setCropFilter] = useState("all");
   const [farmLoadError, setFarmLoadError] = useState("");
+  const [farmRefreshing, setFarmRefreshing] = useState(false);
   const [fieldsLoadError, setFieldsLoadError] = useState("");
 
   const farm = farms.find((item) => item.id === selectedFarmId);
@@ -357,21 +429,30 @@ export default function Home() {
   const fieldCount = fields.length;
   const latest = readings[0];
   const filteredFarms = farms.filter((item) => `${item.name} ${item.municipality} ${item.state}`.toLocaleLowerCase("pt-BR").includes(farmSearch.toLocaleLowerCase("pt-BR")));
-  const filteredFields = fields.filter((item) => `${item.name} ${crops[item.crop] ?? item.crop}`.toLocaleLowerCase("pt-BR").includes(fieldSearch.toLocaleLowerCase("pt-BR")));
+  const farmStats = Object.fromEntries(farms.map((item) => {
+    const itemFields = farmFieldsById[item.id] ?? (item.id === selectedFarmId ? fields : undefined);
+    return [item.id, itemFields ? { fields: itemFields.length, area: itemFields.reduce((sum, field) => sum + (Number(field.area_ha) || 0), 0) } : undefined];
+  })) as Record<string, { fields: number; area: number } | undefined>;
+  const filteredFields = fields.filter((item) => (cropFilter === "all" || item.crop === cropFilter) && `${item.name} ${crops[item.crop] ?? item.crop}`.toLocaleLowerCase("pt-BR").includes(fieldSearch.toLocaleLowerCase("pt-BR")));
+  const moistureSparkline = series.slice(-7).map((point, index, points) => {
+    const range = Math.max(...points.map((item) => item.value)) - Math.min(...points.map((item) => item.value)) || 1;
+    return `${points.length < 2 ? 0 : (index / (points.length - 1)) * 100},${24 - ((point.value - Math.min(...points.map((item) => item.value))) / range) * 20}`;
+  }).join(" ");
 
   const loadFarms = useCallback(async (auth: string) => {
     const list = (await apiFetch<(Farm & { _id?: string })[]>("/farms", auth)).map(normalizeFarm);
     setFarms(list);
-    const stats = await Promise.all(list.map(async (item) => {
-      try {
-        const rows = await apiFetch<{ fields: number; area_ha: number }[]>(`/analytics/farms/${encodeURIComponent(item.id)}/summary`, auth);
-        return [item.id, { fields: rows.reduce((sum, row) => sum + row.fields, 0), area: rows.reduce((sum, row) => sum + row.area_ha, 0) }] as const;
-      } catch { return [item.id, null] as const; }
-    }));
-    setFarmStats(Object.fromEntries(stats.filter((entry): entry is readonly [string, { fields: number; area: number }] => entry[1] !== null)));
     setSelectedFarmId((current) => list.some((item) => item.id === current) ? current : list[0]?.id ?? "");
     return list;
   }, []);
+
+  const refreshFarms = async () => {
+    setFarmRefreshing(true);
+    setFarmLoadError("");
+    try { await loadFarms(token!); }
+    catch (error) { setFarmLoadError(detailOf(error)); }
+    finally { setFarmRefreshing(false); }
+  };
 
   const loadRecords = useCallback(async (auth: string, fieldId: string, isCurrent: () => boolean = () => true) => {
     setRecordsLoading(true); setRecordsError("");
@@ -397,7 +478,7 @@ export default function Home() {
 
   const logout = useCallback(() => {
     window.localStorage.removeItem("agropulse_token");
-    setToken(null); setUser(null); setFarms([]); setFields([]); setSeasons([]); setOperations([]); setSensors([]); setSelectedFarmId(""); setSelectedFieldId("");
+    setToken(null); setUser(null); setFarms([]); setFarmFieldsById({}); setFields([]); setSeasons([]); setOperations([]); setSensors([]); setSelectedFarmId(""); setSelectedFieldId("");
     setAccountOpen(false);
   }, []);
 
@@ -465,10 +546,28 @@ export default function Home() {
     if (!token) return;
     setSaving(true);
     try {
-      await apiFetch<void>("/auth/me", token, {
-        method: "DELETE",
-        body: JSON.stringify({ current_password: currentPassword }),
-      });
+      try {
+        await apiFetch<void>("/auth/me", token, {
+          method: "DELETE",
+          body: JSON.stringify({ current_password: currentPassword }),
+        });
+      } catch (deleteError) {
+        if (deleteError instanceof ApiError) throw deleteError;
+        // A request may reach the server even when the browser loses its response.
+        try {
+          await apiFetch<User>("/auth/me", token);
+        } catch (verificationError) {
+          if (verificationError instanceof ApiError && verificationError.status === 401) {
+            setSessionExpired(false);
+            setAccountDeleted(true);
+            logout();
+            return;
+          }
+        }
+        throw deleteError;
+      }
+      setSessionExpired(false);
+      setAccountDeleted(true);
       logout();
     } finally {
       setSaving(false);
@@ -490,22 +589,27 @@ export default function Home() {
   }, [loadFarms]);
 
   useEffect(() => {
-    if (!token || !selectedFarmId) { setFields([]); setSummary([]); setSelectedFieldId(""); setFieldsLoadError(""); return; }
+    if (!token || !selectedFarmId) { setFields([]); setSelectedFieldId(""); setFieldsLoadError(""); return; }
     let active = true; setLoadingWorkspace(true); setFieldsLoadError("");
-    Promise.allSettled([
-      apiFetch<(Field & { _id?: string })[]>(`/fields?farm_id=${encodeURIComponent(selectedFarmId)}`, token),
-      apiFetch<{ crop: string; fields: number; area_ha: number }[]>(`/analytics/farms/${encodeURIComponent(selectedFarmId)}/summary`, token),
-    ]).then(([fieldsResult, summaryResult]) => {
+    Promise.allSettled([apiFetch<(Field & { _id?: string })[]>(`/fields?farm_id=${encodeURIComponent(selectedFarmId)}`, token)]).then(([fieldsResult]) => {
       if (!active) return;
       if (fieldsResult.status === "fulfilled") {
         const list = fieldsResult.value.map(normalizeField); setFields(list);
+        setFarmFieldsById((current) => ({ ...current, [selectedFarmId]: list }));
         setSelectedFieldId((current) => list.some((item) => item.id === current) ? current : list[0]?.id ?? "");
       } else { setFields([]); setSelectedFieldId(""); setFieldsLoadError(detailOf(fieldsResult.reason)); }
-      setSummary(summaryResult.status === "fulfilled" ? summaryResult.value : []);
       setLoadingWorkspace(false);
     });
     return () => { active = false; };
   }, [token, selectedFarmId, workspaceVersion]);
+
+  useEffect(() => {
+    if (!token || page !== "farms" || !farms.length) { setFarmFieldsById({}); return; }
+    let active = true;
+    Promise.all(farms.map(async (item) => [item.id, await apiFetch<(Field & { _id?: string })[]>(`/fields?farm_id=${encodeURIComponent(item.id)}`, token).catch(() => [])] as const))
+      .then((entries) => { if (active) setFarmFieldsById(Object.fromEntries(entries.map(([id, rows]) => [id, rows.map(normalizeField)]))); });
+    return () => { active = false; };
+  }, [token, page, farms]);
 
   useEffect(() => {
     if (!token || !selectedFieldId) { setSeasons([]); setOperations([]); setSensors([]); setRecordsError(""); setRecordsLoading(false); return; }
@@ -513,6 +617,30 @@ export default function Home() {
     void loadRecords(token, selectedFieldId, () => active);
     return () => { active = false; };
   }, [token, selectedFieldId, loadRecords]);
+
+  useEffect(() => {
+    if (!token || page !== "seasons" || !fields.length) { setSeasonTimeline([]); setSeasonTimelineLoading(false); return; }
+    let active = true;
+    setSeasonTimelineLoading(true);
+    Promise.all(fields.map((field) => apiFetch<(Season & { _id?: string })[]>(`/seasons?field_id=${encodeURIComponent(field.id)}`, token).catch(() => [])))
+      .then((items) => { if (active) setSeasonTimeline(items.flat().map((item) => ({ ...item, id: entityId(item) }))); })
+      .finally(() => { if (active) setSeasonTimelineLoading(false); });
+    return () => { active = false; };
+  }, [token, page, fields, seasonRefresh]);
+
+  useEffect(() => {
+    if (!token || page !== "sensors" || !fields.length) { setAllSensors([]); setSensorReadings([]); setAllSensorsLoading(false); return; }
+    let active = true;
+    setAllSensorsLoading(true);
+    Promise.all(fields.map(async (field) => {
+      const [sensorRows, latestRows] = await Promise.all([
+        apiFetch<(Sensor & { _id?: string })[]>(`/sensors?field_id=${encodeURIComponent(field.id)}`, token).catch(() => []),
+        apiFetch<Reading[]>(`/fields/${encodeURIComponent(field.id)}/readings/latest`, token).catch(() => []),
+      ]);
+      return { sensorRows, latestRows };
+    })).then((rows) => { if (active) { setAllSensors(rows.flatMap((item) => item.sensorRows.map((sensor) => ({ ...sensor, id: entityId(sensor) })))); setSensorReadings(rows.flatMap((item) => item.latestRows)); } }).finally(() => { if (active) setAllSensorsLoading(false); });
+    return () => { active = false; };
+  }, [token, page, fields, sensorRefresh]);
 
   useEffect(() => {
     if (!token || !selectedFieldId) { setSeries([]); setReadings([]); setSeriesError(""); return; }
@@ -523,12 +651,12 @@ export default function Home() {
       apiFetch<Reading[]>(`/fields/${encodeURIComponent(selectedFieldId)}/readings/latest`, token),
     ]).then(([seriesResult, readingResult]) => {
       if (!active) return;
-      if (seriesResult.status === "fulfilled") setSeries(seriesResult.value); else { setSeries([]); setSeriesError(detailOf(seriesResult.reason)); }
+      if (seriesResult.status === "fulfilled") setSeries(seriesResult.value); else { setSeries([]); setSeriesError("Não foi possível carregar os dados dos sensores agora."); }
       if (readingResult.status === "fulfilled") setReadings(readingResult.value); else setReadings([]);
       setSeriesLoading(false);
     });
     return () => { active = false; };
-  }, [token, selectedFieldId, metric, days]);
+  }, [token, selectedFieldId, metric, days, seriesRetry]);
 
   useEffect(() => {
     if (!token || !selectedFieldId) return;
@@ -543,26 +671,29 @@ export default function Home() {
   }, [token, selectedFieldId]);
 
   const loadAlerts = useCallback(async (auth: string, currentFields: Field[]) => {
-    if (!currentFields.length) { setAlerts([]); setAlertRules([]); setAlertsSupported(true); setAlertsError(""); return; }
+    if (!currentFields.length) { setAlerts([]); setResolvedAlerts([]); setAlertRules([]); setAlertsSupported(true); setAlertsError(""); return; }
     setAlertsError("");
-    const [rulesResult, alertsResult] = await Promise.allSettled([
+    const [rulesResult, alertsResult, resolvedResult] = await Promise.allSettled([
       apiFetch<AlertRule[]>("/alert-rules", auth),
       apiFetch<Alert[]>("/alerts?status=open", auth),
+      apiFetch<Alert[]>("/alerts?status=resolved", auth),
     ]);
-    const hasUnsupported = [rulesResult, alertsResult].some((result) => result.status === "rejected" && /404|405|não foi possível concluir|not found/i.test(detailOf(result.reason)));
+    const hasUnsupported = [rulesResult, alertsResult, resolvedResult].some((result) => result.status === "rejected" && /404|405|não foi possível concluir|not found/i.test(detailOf(result.reason)));
     if (hasUnsupported) setAlertsSupported(false);
     const fieldIds = new Set(currentFields.map((item) => item.id));
     if (rulesResult.status === "fulfilled") setAlertRules(rulesResult.value.map(normalizeAlert).filter((item) => fieldIds.has(item.field_id)));
     else setAlertRules([]);
     if (alertsResult.status === "fulfilled") setAlerts(alertsResult.value.map(normalizeAlert).filter((item) => item.field_id ? fieldIds.has(item.field_id) : true));
     else setAlerts([]);
+    if (resolvedResult.status === "fulfilled") setResolvedAlerts(resolvedResult.value.map(normalizeAlert).filter((item) => item.field_id ? fieldIds.has(item.field_id) : true));
+    else setResolvedAlerts([]);
     if (rulesResult.status === "rejected" && alertsResult.status === "rejected" && !hasUnsupported) setAlertsError(detailOf(rulesResult.reason));
   }, []);
 
   useEffect(() => { if (token && fields.length) void loadAlerts(token, fields); }, [token, fields, loadAlerts]);
 
   const signIn = (auth: string, profile: User) => {
-    window.localStorage.setItem("agropulse_token", auth); setSessionExpired(false); setToken(auth); setUser(profile); setReady(false);
+    window.localStorage.setItem("agropulse_token", auth); setSessionExpired(false); setAccountDeleted(false); setToken(auth); setUser(profile); setReady(false);
     loadFarms(auth).then(() => { setReady(true); }).catch((error) => { setReady(true); setFarmLoadError(detailOf(error)); });
   };
 
@@ -575,7 +706,7 @@ export default function Home() {
     } finally { setSaving(false); }
   };
   const deleteFarm = async (item: Farm) => {
-    if (!token || !window.confirm(`Excluir a fazenda “${item.name}” e os talhões vinculados?`)) return;
+    if (!token) return;
     try { await apiFetch<void>(`/farms/${encodeURIComponent(item.id)}`, token, { method: "DELETE" }); await loadFarms(token); setNotice({ kind: "success", text: "Fazenda excluída." }); }
     catch (error) { setNotice({ kind: "error", text: detailOf(error) }); }
   };
@@ -584,12 +715,12 @@ export default function Home() {
     setSaving(true);
     try {
       const saved = fieldModal?.mode === "edit" && fieldModal.field ? await apiFetch<Field>(`/fields/${encodeURIComponent(fieldModal.field.id)}`, token, { method: "PATCH", body: JSON.stringify(body) }) : await apiFetch<Field>("/fields", token, { method: "POST", body: JSON.stringify(body) });
-      const list = (await apiFetch<(Field & { _id?: string })[]>(`/fields?farm_id=${encodeURIComponent(selectedFarmId)}`, token)).map(normalizeField); setFields(list); if (saved) setSelectedFieldId(entityId(saved)); setFieldModal(null); setNotice({ kind: "success", text: fieldModal?.mode === "edit" ? "Talhão atualizado com sucesso." : "Talhão cadastrado com sucesso." });
+      const list = (await apiFetch<(Field & { _id?: string })[]>(`/fields?farm_id=${encodeURIComponent(selectedFarmId)}`, token)).map(normalizeField); setFields(list); setFarmFieldsById((current) => ({ ...current, [selectedFarmId]: list })); if (saved) setSelectedFieldId(entityId(saved)); setFieldModal(null); setNotice({ kind: "success", text: fieldModal?.mode === "edit" ? "Talhão atualizado com sucesso." : "Talhão cadastrado com sucesso." });
     } finally { setSaving(false); }
   };
   const deleteField = async (item: Field) => {
-    if (!token || !window.confirm(`Excluir o talhão “${item.name}”?`)) return;
-    try { await apiFetch<void>(`/fields/${encodeURIComponent(item.id)}`, token, { method: "DELETE" }); const list = (await apiFetch<(Field & { _id?: string })[]>(`/fields?farm_id=${encodeURIComponent(selectedFarmId)}`, token)).map(normalizeField); setFields(list); setSelectedFieldId(list[0]?.id ?? ""); setNotice({ kind: "success", text: "Talhão excluído." }); }
+    if (!token) return;
+    try { await apiFetch<void>(`/fields/${encodeURIComponent(item.id)}`, token, { method: "DELETE" }); const list = (await apiFetch<(Field & { _id?: string })[]>(`/fields?farm_id=${encodeURIComponent(selectedFarmId)}`, token)).map(normalizeField); setFields(list); setFarmFieldsById((current) => ({ ...current, [selectedFarmId]: list })); setSelectedFieldId(list[0]?.id ?? ""); setNotice({ kind: "success", text: "Talhão excluído." }); }
     catch (error) { setNotice({ kind: "error", text: detailOf(error) }); }
   };
   const saveSeason = async (body: object) => {
@@ -601,24 +732,25 @@ export default function Home() {
         await apiFetch<Season>(`/seasons/${encodeURIComponent(seasonModal.record.id)}`, token, { method: "PATCH", body: JSON.stringify(changes) });
       } else await apiFetch<Season>("/seasons", token, { method: "POST", body: JSON.stringify(body) });
       await loadRecords(token, selectedFieldId); setSeasonModal(null); setNotice({ kind: "success", text: seasonModal.mode === "edit" ? "Safra atualizada." : "Safra planejada." });
+      setSeasonRefresh((version) => version + 1);
     } finally { setSaving(false); }
   };
   const deleteSeason = async (item: Season) => {
-    if (!token || !selectedFieldId || !window.confirm(`Excluir a safra “${item.label}”?`)) return;
-    try { await apiFetch<void>(`/seasons/${encodeURIComponent(item.id)}`, token, { method: "DELETE" }); await loadRecords(token, selectedFieldId); setNotice({ kind: "success", text: "Safra excluída." }); }
+    if (!token || !selectedFieldId) return;
+    try { await apiFetch<void>(`/seasons/${encodeURIComponent(item.id)}`, token, { method: "DELETE" }); await loadRecords(token, selectedFieldId); setSeasonRefresh((version) => version + 1); setNotice({ kind: "success", text: "Safra excluída." }); }
     catch (error) { setNotice({ kind: "error", text: detailOf(error) }); }
   };
-  const saveOperation = async (body: object) => {
+  const saveOperation = async (body: object, idempotencyKey?: string) => {
     if (!token || !selectedFieldId || !operationModal) return;
     setSaving(true);
     try {
       if (operationModal.mode === "edit") await apiFetch<Operation>(`/operations/${encodeURIComponent(operationModal.record.id)}`, token, { method: "PATCH", body: JSON.stringify(body) });
-      else await apiFetch<Operation>("/operations", token, { method: "POST", body: JSON.stringify(body) });
+      else await apiFetch<Operation>("/operations", token, { method: "POST", body: JSON.stringify(body), headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : undefined });
       await loadRecords(token, selectedFieldId); setOperationModal(null); setNotice({ kind: "success", text: operationModal.mode === "edit" ? "Operação atualizada." : "Operação registrada." });
     } finally { setSaving(false); }
   };
   const deleteOperation = async (item: Operation) => {
-    if (!token || !selectedFieldId || !window.confirm("Excluir esta operação do histórico?")) return;
+    if (!token || !selectedFieldId) return;
     try { await apiFetch<void>(`/operations/${encodeURIComponent(item.id)}`, token, { method: "DELETE" }); await loadRecords(token, selectedFieldId); setNotice({ kind: "success", text: "Operação excluída." }); }
     catch (error) { setNotice({ kind: "error", text: detailOf(error) }); }
   };
@@ -628,17 +760,17 @@ export default function Home() {
     try {
       if (sensorModal.mode === "edit") await apiFetch<Sensor>(`/sensors/${encodeURIComponent(sensorModal.record.id)}`, token, { method: "PATCH", body: JSON.stringify(body) });
       else await apiFetch<Sensor>("/sensors", token, { method: "POST", body: JSON.stringify(body) });
-      await loadRecords(token, selectedFieldId); setSensorModal(null); setNotice({ kind: "success", text: sensorModal.mode === "edit" ? "Sensor atualizado." : "Sensor vinculado ao talhão." });
+      await loadRecords(token, selectedFieldId); setSensorRefresh((version) => version + 1); setSensorModal(null); setNotice({ kind: "success", text: sensorModal.mode === "edit" ? "Sensor atualizado." : "Sensor vinculado ao talhão." });
     } finally { setSaving(false); }
   };
   const toggleSensor = async (sensor: Sensor) => {
     if (!token || !selectedFieldId) return;
-    try { await apiFetch<Sensor>(`/sensors/${encodeURIComponent(sensor.id)}`, token, { method: "PATCH", body: JSON.stringify({ active: !sensor.active }) }); await loadRecords(token, selectedFieldId); setNotice({ kind: "success", text: sensor.active ? "Sensor desativado." : "Sensor ativado." }); }
+    try { await apiFetch<Sensor>(`/sensors/${encodeURIComponent(sensor.id)}`, token, { method: "PATCH", body: JSON.stringify({ active: !sensor.active }) }); await loadRecords(token, selectedFieldId); setSensorRefresh((version) => version + 1); setNotice({ kind: "success", text: sensor.active ? "Sensor desativado." : "Sensor ativado." }); }
     catch (error) { setNotice({ kind: "error", text: detailOf(error) }); }
   };
   const deleteSensor = async (sensor: Sensor) => {
-    if (!token || !selectedFieldId || !window.confirm(`Remover o sensor “${sensor.device_id}” deste talhão?`)) return;
-    try { await apiFetch<void>(`/sensors/${encodeURIComponent(sensor.id)}`, token, { method: "DELETE" }); await loadRecords(token, selectedFieldId); setNotice({ kind: "success", text: "Sensor removido." }); }
+    if (!token || !selectedFieldId) return;
+    try { await apiFetch<void>(`/sensors/${encodeURIComponent(sensor.id)}`, token, { method: "DELETE" }); await loadRecords(token, selectedFieldId); setSensorRefresh((version) => version + 1); setNotice({ kind: "success", text: "Sensor removido." }); }
     catch (error) { setNotice({ kind: "error", text: detailOf(error) }); }
   };
   const saveRule = async (rule: AlertRule | undefined, body: object) => {
@@ -651,43 +783,54 @@ export default function Home() {
       setNotice({ kind: "success", text: rule ? "Regra de alerta atualizada." : "Regra de alerta criada." });
     } finally { setSaving(false); }
   };
-  const toggleRule = async (rule: AlertRule) => { if (!token) return; try { await apiFetch<AlertRule>(`/alert-rules/${encodeURIComponent(entityId(rule))}`, token, { method: "PATCH", body: JSON.stringify({ active: rule.active === false }) }); await loadAlerts(token, fields); } catch (error) { setNotice({ kind: "error", text: detailOf(error) }); } };
-  const deleteRule = async (rule: AlertRule) => { if (!token || !window.confirm("Excluir esta regra de alerta?")) return; try { await apiFetch<void>(`/alert-rules/${encodeURIComponent(entityId(rule))}`, token, { method: "DELETE" }); await loadAlerts(token, fields); setNotice({ kind: "success", text: "Regra removida." }); } catch (error) { setNotice({ kind: "error", text: detailOf(error) }); } };
+  const toggleRuleGroup = async (group: AlertRule[]) => { if (!token || !group.length) return; const active = !group.every((rule) => rule.active !== false); try { await Promise.all(group.map((rule) => apiFetch<AlertRule>(`/alert-rules/${encodeURIComponent(entityId(rule))}`, token, { method: "PATCH", body: JSON.stringify({ active }) }))); await loadAlerts(token, fields); } catch (error) { setNotice({ kind: "error", text: detailOf(error) }); } };
+  const deleteRuleGroup = async (group: AlertRule[]) => { if (!token || !group.length) return; try { await Promise.all(group.map((rule) => apiFetch<void>(`/alert-rules/${encodeURIComponent(entityId(rule))}`, token, { method: "DELETE" }))); await loadAlerts(token, fields); setNotice({ kind: "success", text: "Regra removida." }); } catch (error) { setNotice({ kind: "error", text: detailOf(error) }); } };
 
-  if (!ready) return <main className="boot-screen"><Brand/><span className="spinner"/></main>;
-  if (!token || !user) return <AuthScreen onAuthenticated={signIn} sessionExpired={sessionExpired}/>;
+  if (!ready) return <main className="boot-screen"><Brand/><span className="skeleton"/></main>;
+  if (!token || !user) return <AuthScreen onAuthenticated={signIn} sessionExpired={sessionExpired} accountDeleted={accountDeleted}/>;
 
   const addFarm = () => setFarmModal({ mode: "create" });
   const addField = () => { if (!farm) { setNotice({ kind: "error", text: "Cadastre ou selecione uma fazenda primeiro." }); return; } setFieldModal({ mode: "create" }); };
   const addSeason = () => selectedFieldId ? setSeasonModal({ mode: "create" }) : setNotice({ kind: "error", text: "Selecione um talhão antes de planejar uma safra." });
-  const addOperation = () => selectedFieldId ? setOperationModal({ mode: "create" }) : setNotice({ kind: "error", text: "Selecione um talhão antes de registrar uma operação." });
+  const addOperation = () => { setOperationTypePreset("plantio"); selectedFieldId ? setOperationModal({ mode: "create" }) : setNotice({ kind: "error", text: "Selecione um talhão antes de registrar uma operação." }); };
+  const addQuickOperation = (type: Operation["type"]) => { setOperationTypePreset(type); selectedFieldId ? setOperationModal({ mode: "create" }) : setNotice({ kind: "error", text: "Selecione um talhão antes de registrar uma operação." }); };
   const addSensor = () => selectedFieldId ? setSensorModal({ mode: "create" }) : setNotice({ kind: "error", text: "Selecione um talhão antes de vincular um sensor." });
-  const navAdd = () => page === "fields" ? addField() : page === "seasons" ? addSeason() : page === "operations" ? addOperation() : page === "sensors" ? addSensor() : addFarm();
+  const navAdd = () => page === "fields" ? addField() : page === "seasons" ? addSeason() : page === "operations" ? addOperation() : page === "sensors" ? addSensor() : page === "alerts" ? setRuleCreateRequest((value) => value + 1) : page === "farms" ? addFarm() : undefined;
   const mapCenter: [number, number] | undefined = farm ? [farm.location.coordinates[1], farm.location.coordinates[0]] : undefined;
-  const cropBreakdown = summary.length ? summary : Object.entries(fields.reduce<Record<string, { fields: number; area_ha: number }>>((acc, item) => { acc[item.crop] ??= { fields: 0, area_ha: 0 }; acc[item.crop].fields += 1; acc[item.crop].area_ha += item.area_ha; return acc; }, {})).map(([crop, data]) => ({ crop, ...data }));
+  const cropBreakdown = Object.entries(fields.reduce<Record<string, { fields: number; area_ha: number }>>((acc, item) => { acc[item.crop] ??= { fields: 0, area_ha: 0 }; acc[item.crop].fields += 1; acc[item.crop].area_ha += item.area_ha; return acc; }, {})).map(([crop, data]) => ({ crop, ...data }));
 
-  return <div className="app-shell"><Sidebar page={page} setPage={setPage} farms={farms} selectedFarmId={selectedFarmId} onFarmSelect={setSelectedFarmId} user={user} onLogout={logout} onAccount={() => setAccountOpen(true)} mobileOpen={mobileOpen} closeMobile={() => setMobileOpen(false)}/><main className="main-area"><Header page={page} farm={farm} onAdd={navAdd} onMenu={() => setMobileOpen(true)}/><div className="page-content">
+  return <div className="app-shell"><Sidebar page={page} setPage={setPage} farms={farms} selectedFarmId={selectedFarmId} onFarmSelect={setSelectedFarmId} user={user} onLogout={logout} onAccount={() => setAccountOpen(true)} mobileOpen={mobileOpen} closeMobile={() => setMobileOpen(false)} alertCount={alertsSupported ? alerts.length : 0}/><main className="main-area"><Header page={page} onAdd={navAdd} onMenu={() => setMobileOpen(true)}/><div className="page-content">
     {(farmLoadError || fieldsLoadError || workspaceError || recordsError || alertsError) && <div className="workspace-warning" role="alert"><Icon name="bell" size={17}/><span>{farmLoadError || fieldsLoadError || workspaceError || recordsError || alertsError}</span><button className="text-button" onClick={() => { if (farmLoadError) { setFarmLoadError(""); void loadFarms(token); } else if (recordsError && selectedFieldId) { void loadRecords(token, selectedFieldId); } else { setFieldsLoadError(""); setWorkspaceVersion((version) => version + 1); } }}>Tentar novamente</button></div>}
     {page === "overview" && <>
-      <section className="welcome-row"><div><p className="welcome-kicker">{new Intl.DateTimeFormat("pt-BR", { weekday: "long", day: "numeric", month: "long" }).format(new Date())}</p><h2>Bom dia, {user.name.split(" ")[0]} <span className="wave">✳</span></h2><p className="welcome-copy">Acompanhe o que acontece na sua operação hoje.</p></div>{farms.length > 1 && <label className="farm-select-wrap"><span>Fazenda selecionada</span><select value={selectedFarmId} onChange={(event) => setSelectedFarmId(event.target.value)}>{farms.map((item) => <option key={item.id} value={item.id}>{item.name} · {item.state}</option>)}</select><Icon name="down" size={16}/></label>}</section>
+      <section className="welcome-row"><div><h2>{farm?.name ?? "Visão geral"}</h2><p className="welcome-copy">{farm ? `${farmPlace(farm)} · ${formatNumber(fieldArea, 1)} ha · ${fieldCount} ${fieldCount === 1 ? "talhão" : "talhões"}` : "Acompanhe suas propriedades e áreas produtivas."}</p></div></section>
       {!farms.length ? farmLoadError ? <EmptyState title="Não foi possível carregar as fazendas" body={farmLoadError} action="Tentar novamente" icon="farm" onAction={() => { setFarmLoadError(""); void loadFarms(token); }}/> : <EmptyState title="Sua operação começa com uma fazenda" body="Cadastre sua primeira propriedade para organizar os talhões e acompanhar as informações da lavoura." action="Cadastrar fazenda" onAction={addFarm}/> : <>
-        <section className="metrics-grid"><MetricCard label="Área monitorada" value={formatNumber(fieldArea, 1)} unit="ha" icon="map" tone="green" caption={`${farm?.name ?? "Fazenda selecionada"} · ${farmPlace(farm)}`}/><MetricCard label="Talhões cadastrados" value={String(fieldCount)} icon="field" tone="blue" caption={fieldCount === 1 ? "área produtiva" : "áreas produtivas"}/><MetricCard label="Umidade do solo" value={latest?.soil_moisture == null ? "—" : formatNumber(latest.soil_moisture, 1)} unit={latest?.soil_moisture == null ? "" : "%"} icon="droplet" tone="aqua" caption={latest ? `Atualizado em ${dateLabel(latest.ts, true)}` : "Aguardando leitura dos sensores"}/><MetricCard label="Alertas abertos" value={alertsSupported ? String(alerts.length) : "—"} icon="bell" tone="amber" caption={alertsSupported ? "nas áreas monitoradas" : "integração em andamento"}/></section>
-        <div className="dashboard-grid"><section className="panel map-panel"><div className="panel-heading"><div><span className="eyebrow muted-eyebrow">VISÃO ESPACIAL</span><h2>Mapa dos talhões</h2><p>{farmPlace(farm)}</p></div><button className="subtle-action" onClick={() => setPage("fields")}>Ver talhões <Icon name="chevron" size={15}/></button></div><FieldMap fields={fields} selectedFieldId={selectedFieldId} onSelect={setSelectedFieldId} center={mapCenter}/><div className="map-legend"><span><i className="legend-green"/>Talhão cadastrado</span><span>{formatNumber(fieldArea, 1)} ha no total</span></div></section>
-          <section className="panel crop-panel"><div className="panel-heading"><div><span className="eyebrow muted-eyebrow">DISTRIBUIÇÃO</span><h2>Áreas por cultura</h2><p>Resumo da fazenda selecionada</p></div><span className="soft-icon"><Icon name="leaf"/></span></div>{cropBreakdown.length ? <div className="crop-list">{cropBreakdown.map((item, index) => { const total = cropBreakdown.reduce((sum, row) => sum + row.area_ha, 0) || 1; const percent = Math.round(item.area_ha / total * 100); return <div className="crop-row" key={item.crop}><div className="crop-row-top"><span><i className={`crop-dot dot-${index % 5}`}/>{crops[item.crop as Field["crop"]] ?? item.crop}</span><strong>{formatNumber(item.area_ha, 1)} <small>ha</small></strong></div><div className="crop-track"><span className={`crop-bar bar-${index % 5}`} style={{ width: `${Math.max(percent, 4)}%` }}/></div><small className="crop-percent">{percent}% da área cadastrada · {item.fields} {item.fields === 1 ? "talhão" : "talhões"}</small></div>; })}</div> : <div className="mini-empty"><Icon name="leaf" size={22}/><span>Cadastre os talhões para ver a distribuição por cultura.</span><button className="text-button" onClick={addField}>Adicionar talhão</button></div>}</section>
+        {alerts.length > 0 && <div className="overview-alert-banner" role="status"><span className="alert-banner-dot"/><strong>{alerts.length} {alerts.length === 1 ? "alerta aberto" : "alertas abertos"}</strong><span>Há condições que precisam de atenção.</span><button className="text-button" onClick={() => setPage("alerts")}>Ver alertas <Icon name="chevron" size={15}/></button></div>}
+        <section className={`metrics-grid ${alerts.length > 0 ? "has-alerts" : ""}`}><MetricCard label="Área monitorada" value={formatNumber(fieldArea, 1)} unit="ha" caption={`${fieldCount} ${fieldCount === 1 ? "talhão" : "talhões"} cadastrados`}/><MetricCard label="Talhões cadastrados" value={String(fieldCount)} caption={farmPlace(farm)}/><MetricCard label="Umidade do solo" value={latest?.soil_moisture == null ? "—" : formatNumber(latest.soil_moisture, 1)} unit={latest?.soil_moisture == null ? "" : "%"} caption={latest ? `Atualizado em ${dateLabel(latest.ts, true)}` : "Aguardando leitura dos sensores"} detail={<><svg className="metric-sparkline" viewBox="0 0 100 28" preserveAspectRatio="none" aria-label="Tendência recente da umidade"><polyline points={moistureSparkline} fill="none" stroke="var(--chart-sensor-1)" strokeWidth="2" vectorEffect="non-scaling-stroke"/></svg><div className="moisture-threshold"><span/><i>Limite 20%</i></div></>}/><MetricCard label="Alertas abertos" value={alertsSupported ? String(alerts.length) : "—"} caption={alertsSupported ? alerts.length ? "Verifique os eventos ativos" : "" : "Integração indisponível"} detail={!alerts.length && alertsSupported ? <span className="metric-ok-caption"><i/>Nenhum alerta</span> : undefined} tone={alerts.length ? "alerts-hot" : ""}/></section>
+        <div className="dashboard-grid"><section className="panel map-panel"><div className="panel-heading"><div><h2>Mapa dos talhões</h2><p>{farmPlace(farm)}</p></div><button className="subtle-action" onClick={() => setPage("fields")}>Ver talhões <Icon name="chevron" size={15}/></button></div><FieldMap fields={fields} selectedFieldId={selectedFieldId} onSelect={setSelectedFieldId} center={mapCenter}/><div className="map-legend">{cropBreakdown.map((item) => <span key={item.crop}><i className={`legend-${item.crop}`}/>{crops[item.crop as Field["crop"]] ?? item.crop}</span>)}</div></section>
+          <div className="overview-side-stack"><section className="panel crop-panel"><div className="panel-heading"><div><h2>Áreas por cultura</h2></div></div>{cropBreakdown.length ? <><div className="crop-stacked-track">{cropBreakdown.map((item) => { const total = cropBreakdown.reduce((sum, row) => sum + row.area_ha, 0) || 1; const percent = Math.max(item.area_ha / total * 100, 1); return <span key={item.crop} className={`crop-segment crop-${item.crop}`} style={{ width: `${percent}%` }} title={`${crops[item.crop as Field["crop"]] ?? item.crop}: ${formatNumber(item.area_ha, 1)} ha`}/>; })}</div><div className="crop-list">{cropBreakdown.map((item) => { const total = cropBreakdown.reduce((sum, row) => sum + row.area_ha, 0) || 1; const percent = Math.round(item.area_ha / total * 100); return <div className="crop-row" key={item.crop}><div className="crop-row-top"><span><i className={`crop-dot crop-${item.crop}`}/>{crops[item.crop as Field["crop"]] ?? item.crop}</span><strong>{formatNumber(item.area_ha, 1)} ha · {percent}%</strong></div></div>; })}</div></> : <div className="mini-empty">Cadastre os talhões para ver a distribuição por cultura.</div>}</section>
+            <section className="panel quick-fields"><div className="panel-heading"><h2>Talhões</h2><button className="subtle-action" onClick={() => setPage("fields")}>Ver todos <Icon name="chevron" size={15}/></button></div>{fields.slice(0, 5).map((item) => <div className="overview-field-row" key={item.id} onMouseEnter={() => setSelectedFieldId(item.id)}><span className={`overview-field-color crop-${item.crop}`}/><span className="overview-field-name">{item.name}</span><span className="overview-field-area">{formatNumber(item.area_ha, 1)} ha</span><i className="overview-field-status" title="Status da umidade"/></div>)}{!fields.length && <p className="small-empty">Nenhum talhão cadastrado nesta fazenda.</p>}</section></div>
         </div>
-        <section className="panel chart-panel"><div className="panel-heading chart-heading"><div><span className="eyebrow muted-eyebrow">TELEMETRIA</span><h2>Leituras dos sensores</h2><p>{selectedField ? `${selectedField.name} · ${farm?.name ?? ""}` : "Selecione um talhão para visualizar os dados"}</p></div><div className="chart-controls"><label className="visually-hidden" htmlFor="metric-select">Métrica do gráfico</label><select id="metric-select" value={metric} disabled={!fields.length} onChange={(event) => setMetric(event.target.value as typeof metric)}>{metrics.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select><label className="visually-hidden" htmlFor="days-select">Período do gráfico</label><select id="days-select" value={days} disabled={!fields.length} onChange={(event) => setDays(Number(event.target.value))}><option value={1}>Últimas 24 horas</option><option value={2}>Últimos 2 dias</option><option value={7}>Últimos 7 dias</option><option value={30}>Últimos 30 dias</option><option value={90}>Últimos 90 dias</option></select></div></div>{seriesLoading ? <div className="chart-loading"><span className="spinner"/>Carregando leituras…</div> : seriesError ? <div className="chart-inline-error"><Icon name="activity" size={18}/><span>{seriesError}</span></div> : <TelemetryChart data={series} unit={selectedMetric.unit} bucketUnit={days <= 2 ? "hour" : "day"}/>}</section>
-        <section className="bottom-grid"><div className="panel quick-fields"><div className="panel-heading"><div><span className="eyebrow muted-eyebrow">ÁREAS PRODUTIVAS</span><h2>Talhões da fazenda</h2></div><button className="subtle-action" onClick={() => setPage("fields")}>Ver todos <Icon name="chevron" size={15}/></button></div>{fields.slice(0, 4).map((item) => <FieldRow key={item.id} field={item} farm={farm} selected={item.id === selectedFieldId} onSelect={() => setSelectedFieldId(item.id)} onEdit={() => setFieldModal({ mode: "edit", field: item })} onDelete={() => void deleteField(item)}/>)}{!fields.length && <p className="small-empty">Nenhum talhão cadastrado nesta fazenda.</p>}</div><AlertsFeed alerts={alerts.slice(0, 3)} supported={alertsSupported}/></section>
+        <section className="panel chart-panel"><div className="panel-heading chart-heading"><div><h2>Leituras dos sensores</h2><p>{selectedField ? `${selectedField.name} · ${farm?.name ?? ""}` : "Selecione um talhão para visualizar os dados"}</p></div><div className="chart-controls"><div className="segmented-control" role="group" aria-label="Métrica do gráfico">{metrics.map((item) => <button key={item.value} type="button" className={metric === item.value ? "active" : ""} onClick={() => setMetric(item.value)}>{item.label.replace("Temperatura do ", "Temp. ").replace(" acumulada", "")}</button>)}</div><div className="segmented-control period-control" role="group" aria-label="Período do gráfico">{[{ value: 1, label: "24h" }, { value: 7, label: "7d" }, { value: 30, label: "30d" }].map((item) => <button key={item.value} type="button" className={days === item.value ? "active" : ""} onClick={() => setDays(item.value)}>{item.label}</button>)}</div></div></div>{seriesLoading ? <div className="chart-loading"><span className="skeleton"/>Carregando leituras…</div> : seriesError ? <div className="chart-inline-error" role="alert"><Icon name="activity" size={18}/><span>{seriesError}</span><button type="button" className="text-button" onClick={() => setSeriesRetry((value) => value + 1)}>Tentar novamente</button></div> : <TelemetryChart data={series} unit={selectedMetric.unit} bucketUnit={days === 1 ? "hour" : "day"}/>}</section>
       </>}
-      {selectedField && <div className="insights-grid"><WeatherPanel token={token} fieldId={selectedField.id}/><ProductionRankingPanel token={token} crop={selectedField.crop} state={farm?.state}/></div>}
+      {selectedField && <div className="insights-grid"><WeatherPanel token={token} fieldId={selectedField.id}/><ProductionRankingPanel token={token} crop={selectedField.crop} state={farm?.state} municipality={farm?.municipality}/></div>}
     </>}
-    {page === "farms" && <section className="collection-page"><div className="collection-heading"><div><p>PROPRIEDADES</p><h2>Suas fazendas</h2><span>Gerencie suas propriedades e acompanhe a área produtiva.</span></div><div className="collection-actions"><label className="search-box"><Icon name="search" size={17}/><input aria-label="Buscar fazendas" value={farmSearch} onChange={(event) => setFarmSearch(event.target.value)} placeholder="Buscar fazenda…"/></label><button className="button primary" onClick={addFarm}><Icon name="plus" size={17}/>Nova fazenda</button></div></div>{farmLoadError ? <EmptyState title="Não foi possível carregar as fazendas" body={farmLoadError} action="Tentar novamente" icon="farm" onAction={() => { setFarmLoadError(""); void loadFarms(token); }}/> : filteredFarms.length ? <div className="farm-grid">{filteredFarms.map((item) => { const stats = farmStats[item.id]; const isSelected = item.id === selectedFarmId; const count = stats?.fields ?? (isSelected ? fields.length : 0); const area = stats?.area ?? (isSelected ? fieldArea : 0); return <FarmCard key={item.id} farm={item} fieldsCount={count} area={area} statsKnown={Boolean(stats) || isSelected} onSelect={() => { setSelectedFarmId(item.id); setPage("overview"); }} onEdit={() => setFarmModal({ mode: "edit", farm: item })} onDelete={() => void deleteFarm(item)}/>; })}</div> : <EmptyState title={farms.length ? "Nenhuma fazenda encontrada" : "Cadastre sua primeira fazenda"} body={farms.length ? "Tente buscar por outro nome ou município." : "Adicione uma propriedade para começar a mapear sua operação."} action={farms.length ? undefined : "Cadastrar fazenda"} onAction={farms.length ? undefined : addFarm}/>}</section>}
-    {page === "fields" && <section className="collection-page"><div className="collection-heading"><div><p>ÁREAS PRODUTIVAS</p><h2>Talhões</h2><span>Organize suas culturas e acompanhe os limites de cada área.</span></div><div className="collection-actions"><label className="farm-select-wrap collection-farm-select"><span>Fazenda</span><select value={selectedFarmId} disabled={!farms.length} onChange={(event) => setSelectedFarmId(event.target.value)}>{farms.map((item) => <option key={item.id} value={item.id}>{item.name} · {item.state}</option>)}</select><Icon name="down" size={16}/></label><button className="button primary" disabled={!farm} onClick={addField}><Icon name="plus" size={17}/>Novo talhão</button></div></div>{fieldsLoadError ? <EmptyState title="Não foi possível carregar os talhões" body={fieldsLoadError} action="Atualizar" icon="field" onAction={() => { setFieldsLoadError(""); setWorkspaceVersion((version) => version + 1); }}/>: !farms.length ? <EmptyState title="Nenhuma fazenda cadastrada" body="Cadastre uma fazenda antes de adicionar talhões." action="Cadastrar fazenda" onAction={addFarm}/> : <div className="fields-layout"><div className="panel all-fields-panel"><div className="panel-heading"><div><h2>{farm?.name ?? "Talhões"}</h2><p>{fieldCount} áreas · {formatNumber(fieldArea, 1)} hectares</p></div><label className="search-box small-search"><Icon name="search" size={16}/><input aria-label="Buscar talhões" value={fieldSearch} onChange={(event) => setFieldSearch(event.target.value)} placeholder="Buscar…"/></label></div>{loadingWorkspace ? <div className="list-loading"><span className="spinner"/>Carregando talhões…</div> : fieldsLoadError ? <div className="panel-empty"><span className="soft-icon"><Icon name="bell"/></span><div><strong>Não foi possível carregar os talhões</strong><p>{fieldsLoadError}</p></div></div> : filteredFields.length ? filteredFields.map((item) => <FieldRow key={item.id} field={item} farm={farm} selected={item.id === selectedFieldId} onSelect={() => setSelectedFieldId(item.id)} onEdit={() => setFieldModal({ mode: "edit", field: item })} onDelete={() => void deleteField(item)}/>) : <div className="small-empty">{fields.length ? "Nenhum talhão corresponde à busca." : "Esta fazenda ainda não possui talhões."}</div>}</div><div className="panel fields-map-panel"><div className="panel-heading"><div><span className="eyebrow muted-eyebrow">OPENSTREETMAP</span><h2>Limites cadastrados</h2><p>{farmPlace(farm)}</p></div></div><FieldMap fields={fields} selectedFieldId={selectedFieldId} onSelect={setSelectedFieldId} center={mapCenter}/><div className="map-legend"><span><i className="legend-green"/>Talhão</span><span>Selecione uma área para ver detalhes</span></div></div></div>}</section>}
-    {page === "seasons" && <SeasonCollection field={selectedField} fields={fields} selectedFieldId={selectedFieldId} onFieldChange={setSelectedFieldId} seasons={seasons} loading={recordsLoading} error={recordsError} onAdd={addSeason} onEdit={(record) => setSeasonModal({ mode: "edit", record })} onDelete={(record) => void deleteSeason(record)} onAddFarm={addFarm}/>}
-    {page === "operations" && <OperationCollection field={selectedField} fields={fields} selectedFieldId={selectedFieldId} onFieldChange={setSelectedFieldId} operations={operations} seasons={seasons} loading={recordsLoading} error={recordsError} onAdd={addOperation} onEdit={(record) => setOperationModal({ mode: "edit", record })} onDelete={(record) => void deleteOperation(record)} onAddFarm={addFarm}/>}
-    {page === "sensors" && <SensorCollection field={selectedField} fields={fields} selectedFieldId={selectedFieldId} onFieldChange={setSelectedFieldId} sensors={sensors} loading={recordsLoading} error={recordsError} onAdd={addSensor} onEdit={(record) => setSensorModal({ mode: "edit", record })} onToggle={(record) => void toggleSensor(record)} onDelete={(record) => void deleteSensor(record)} onAddFarm={addFarm}/>}
-    {page === "alerts" && <section className="collection-page"><div className="collection-heading"><div><p>MONITORAMENTO</p><h2>Alertas e regras</h2><span>Acompanhe eventos e defina limites para suas leituras.</span></div><label className="farm-select-wrap"><span>Fazenda selecionada</span><select value={selectedFarmId} disabled={!farms.length} onChange={(event) => setSelectedFarmId(event.target.value)}>{farms.map((item) => <option key={item.id} value={item.id}>{item.name} · {item.state}</option>)}</select><Icon name="down" size={16}/></label></div>{alertsError && <div className="workspace-warning"><Icon name="bell" size={17}/>{alertsError}</div>}<div className="alerts-page-grid"><AlertsFeed alerts={alerts} supported={alertsSupported}/><AlertRulesPanel rules={alertRules} fields={fields} onSave={saveRule} onToggle={(rule) => void toggleRule(rule)} onDelete={(rule) => void deleteRule(rule)} supported={alertsSupported} busy={saving}/></div></section>}
+    {page === "farms" && <section className="collection-page"><div className="collection-heading"><div><h2>Fazendas</h2><span>Gerencie suas propriedades e acompanhe a área produtiva.</span></div><div className="collection-actions"><label className="search-box"><Icon name="search" size={17}/><input aria-label="Buscar fazendas" value={farmSearch} onChange={(event) => setFarmSearch(event.target.value)} placeholder="Buscar fazenda…"/>{farmSearch && <button type="button" className="icon-button" aria-label="Limpar busca de fazendas" onClick={() => setFarmSearch("")}><Icon name="close" size={15}/></button>}</label><button type="button" className="button secondary compact-button" disabled={farmRefreshing} onClick={() => void refreshFarms()}>{farmRefreshing ? "Atualizando…" : "Atualizar"}</button></div></div>{farmLoadError ? <EmptyState title="Não foi possível carregar as fazendas" body={farmLoadError} action="Tentar novamente" icon="farm" onAction={() => { setFarmLoadError(""); void loadFarms(token); }}/> : filteredFarms.length ? <div className="farm-grid">{filteredFarms.map((item) => { const stats = farmStats[item.id]; const isSelected = item.id === selectedFarmId; const count = stats?.fields ?? (isSelected ? fields.length : 0); const area = stats?.area ?? (isSelected ? fieldArea : 0); return <FarmCard key={item.id} farm={item} fields={farmFieldsById[item.id] ?? (isSelected ? fields : [])} fieldsCount={count} area={area} statsKnown={Boolean(stats) || isSelected} onSelect={() => { setSelectedFarmId(item.id); setPage("overview"); }} onEdit={() => setFarmModal({ mode: "edit", farm: item })} onDelete={() => void deleteFarm(item)}/>; })}<button type="button" className="farm-add-card" onClick={addFarm}><Icon name="plus"/> Adicionar outra fazenda</button></div> : <EmptyState title={farms.length ? "Nenhuma fazenda encontrada" : "Cadastre sua primeira fazenda"} body={farms.length ? "Tente buscar por outro nome ou município." : "Adicione uma propriedade para começar a mapear sua operação."} action={farms.length ? "Limpar busca" : "Cadastrar fazenda"} onAction={farms.length ? () => setFarmSearch("") : addFarm}/>}</section>}
+    {page === "fields" && <section className="collection-page fields-page">
+      <div className="collection-heading"><div><h2>Talhões</h2><span>Organize suas culturas e acompanhe os limites de cada área.</span></div></div>
+      {fieldsLoadError ? <EmptyState title="Não foi possível carregar os talhões" body={fieldsLoadError} action="Atualizar" icon="field" onAction={() => { setFieldsLoadError(""); setWorkspaceVersion((version) => version + 1); }}/> : !farms.length ? <EmptyState title="Nenhuma fazenda cadastrada" body="Cadastre uma fazenda antes de adicionar talhões." action="Cadastrar fazenda" onAction={addFarm}/> : <div className="fields-layout">
+        <div className="panel all-fields-panel"><div className="fields-list-heading"><div><h2>{fieldCount} talhões · {formatNumber(fieldArea, 1)} ha</h2></div><label className="search-box small-search"><Icon name="search" size={16}/><input aria-label="Buscar talhões" value={fieldSearch} onChange={(event) => setFieldSearch(event.target.value)} placeholder="Buscar talhão"/></label></div>
+          <div className="crop-filter-tabs" role="group" aria-label="Filtrar talhões por cultura">{[{ value: "all", label: "Todas" }, ...Object.entries(crops).map(([value, label]) => ({ value, label }))].map((item) => <button type="button" key={item.value} className={cropFilter === item.value ? "active" : ""} onClick={() => setCropFilter(item.value)}>{item.label}</button>)}</div>
+          {loadingWorkspace ? <div className="list-loading"><span className="skeleton"/>Carregando talhões…</div> : filteredFields.length ? filteredFields.map((item) => <FieldRow key={item.id} field={item} farm={farm} selected={item.id === selectedFieldId} onSelect={() => setSelectedFieldId(item.id)} onEdit={() => setFieldModal({ mode: "edit", field: item })} onDelete={() => void deleteField(item)}/>) : <div className="small-empty">{fields.length ? "Nenhum talhão corresponde aos filtros." : "Esta fazenda ainda não possui talhões."}</div>}
+        </div>
+        <div className="fields-map-panel"><div className="fields-map-toolbar"><button className="button secondary compact-button" disabled={!farm} onClick={addField}><Icon name="plus" size={15}/>Desenhar talhão</button></div><FieldMap fields={fields} selectedFieldId={selectedFieldId} onSelect={setSelectedFieldId} center={mapCenter}/>{selectedField && <div className={`fields-selection-card crop-border-${selectedField.crop}`}><h3>{selectedField.name}</h3><p>{crops[selectedField.crop]} · {formatNumber(selectedField.area_ha, 1)} ha</p><span>{latest?.soil_moisture == null ? "Umidade sem leitura recente" : `Umidade ${formatNumber(latest.soil_moisture, 1)}% · ${latest.soil_moisture < 20 ? "Atenção" : "Dentro do limite"}`}</span><p>{sensors.filter((item) => item.field_id === selectedField.id).length} sensores vinculados · {seasons.find((item) => item.status === "em_andamento")?.label ?? "Sem safra ativa"}</p><div className="fields-selection-actions"><button className="button secondary compact-button" onClick={() => setFieldModal({ mode: "edit", field: selectedField })}>Editar</button><ConfirmAction prompt={`Excluir o talhão “${selectedField.name}”?`} onConfirm={() => void deleteField(selectedField)} className="danger-link">Excluir</ConfirmAction></div></div>}</div>
+      </div>}
+    </section>}
+    {page === "seasons" && <SeasonCollection fields={fields} selectedFieldId={selectedFieldId} seasons={seasonTimeline} loading={recordsLoading || seasonTimelineLoading} error={recordsError} onFieldChange={setSelectedFieldId} onPlanField={(fieldId) => { setSelectedFieldId(fieldId); setSeasonModal({ mode: "create" }); }} onEdit={(record) => { setSelectedFieldId(record.field_id); setSeasonModal({ mode: "edit", record }); }} onDelete={(record) => void deleteSeason(record)}/>}
+    {page === "operations" && <OperationCollection field={selectedField} fields={fields} selectedFieldId={selectedFieldId} onFieldChange={setSelectedFieldId} operations={operations} seasons={seasons} loading={recordsLoading} error={recordsError} onQuickAdd={addQuickOperation} onEdit={(record) => setOperationModal({ mode: "edit", record })} onDelete={(record) => void deleteOperation(record)} onAddFarm={addFarm}/>}
+    {page === "sensors" && <SensorCollection fields={fields} sensors={allSensors} readings={sensorReadings} loading={recordsLoading || allSensorsLoading} error={recordsError} onEdit={(record) => { setSelectedFieldId(record.field_id); setSensorModal({ mode: "edit", record }); }} onToggle={(record) => void toggleSensor(record)} onDelete={(record) => void deleteSensor(record)} onAddFarm={addFarm}/>}
+    {page === "alerts" && <section className="collection-page"><div className="collection-heading"><div><h2>Alertas</h2><span>Acompanhe eventos e defina limites para suas leituras.</span></div></div>{alertsError && <div className="workspace-warning"><Icon name="bell" size={17}/>{alertsError}</div>}<div className="alerts-page-grid"><AlertsFeed alerts={alerts} resolved={resolvedAlerts} supported={alertsSupported}/><AlertRulesPanel rules={alertRules} fields={fields} onSave={saveRule} onToggle={toggleRuleGroup} onDelete={deleteRuleGroup} supported={alertsSupported} busy={saving} createRequest={ruleCreateRequest}/></div></section>}
     </div></main>
-    {farmModal && <FarmForm mode={farmModal.mode} farm={farmModal.farm} onClose={() => setFarmModal(null)} onSave={saveFarm} busy={saving}/>}{fieldModal && <FieldForm mode={fieldModal.mode} field={fieldModal.field} farm={farm} onClose={() => setFieldModal(null)} onSave={saveField} busy={saving}/>}{seasonModal && selectedField && <SeasonDialog season={seasonModal.mode === "edit" ? seasonModal.record : undefined} field={selectedField} onClose={() => setSeasonModal(null)} onSave={saveSeason} busy={saving}/>}{operationModal && selectedField && <OperationDialog operation={operationModal.mode === "edit" ? operationModal.record : undefined} field={selectedField} seasons={seasons} onClose={() => setOperationModal(null)} onSave={saveOperation} busy={saving}/>}{sensorModal && selectedField && <SensorDialog sensor={sensorModal.mode === "edit" ? sensorModal.record : undefined} field={selectedField} onClose={() => setSensorModal(null)} onSave={saveSensor} busy={saving}/>}
+    {farmModal && <FarmForm mode={farmModal.mode} farm={farmModal.farm} onClose={() => setFarmModal(null)} onSave={saveFarm} busy={saving}/>}{fieldModal && <FieldForm mode={fieldModal.mode} field={fieldModal.field} farm={farm} onClose={() => setFieldModal(null)} onSave={saveField} busy={saving}/>}{seasonModal && selectedField && <SeasonDialog season={seasonModal.mode === "edit" ? seasonModal.record : undefined} field={selectedField} onClose={() => setSeasonModal(null)} onSave={saveSeason} busy={saving}/>}{operationModal && selectedField && <OperationDialog operation={operationModal.mode === "edit" ? operationModal.record : undefined} field={selectedField} seasons={seasons.filter((season) => season.field_id === selectedField.id)} onClose={() => setOperationModal(null)} onSave={saveOperation} busy={saving} initialType={operationTypePreset}/>}{sensorModal && selectedField && <SensorDialog sensor={sensorModal.mode === "edit" ? sensorModal.record : undefined} field={selectedField} onClose={() => setSensorModal(null)} onSave={saveSensor} busy={saving}/>}
     {accountOpen && <AccountDialog user={user} busy={saving} onClose={() => setAccountOpen(false)} onSave={updateAccount} onDelete={deleteAccount}/>}
     <Toast notice={notice} onDismiss={dismissNotice}/>
   </div>;

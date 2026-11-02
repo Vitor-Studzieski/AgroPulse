@@ -33,6 +33,62 @@ def test_parse_station_reads_metadata_and_readings():
     assert frame.iloc[1]["ts"].hour == 1
 
 
+def test_parse_station_logs_and_drops_invalid_dates(caplog):
+    invalid_date_csv = STATION_CSV.replace("2024/01/01;0000 UTC", "2024/13/32;0000 UTC", 1)
+
+    _, frame = parse_station(invalid_date_csv, source="A904.csv")
+
+    assert len(frame) == 1
+    assert frame.iloc[0]["ts"].hour == 1
+    assert "A904.csv linha 10" in caplog.text
+    assert "data inválida" in caplog.text
+    assert "2024/13/32" in caplog.text
+
+
+def test_parse_station_drops_out_of_range_measurements(caplog):
+    invalid_measure_csv = STATION_CSV.replace(
+        "2024/01/01;0000 UTC;0,2;24,5;88;1,2;",
+        "2024/01/01;0000 UTC;-2;24,5;150;1,2;",
+    )
+
+    station, frame = parse_station(invalid_measure_csv, source="A904.csv")
+    documents = to_documents(station, frame)
+
+    assert "rain_mm" not in documents[0]
+    assert documents[0]["air_temp"] == pytest.approx(24.5)
+    assert "humidity" not in documents[0]
+    assert documents[0]["wind_ms"] == pytest.approx(1.2)
+    assert "A904.csv linha 10" in caplog.text
+    assert "rain_mm fora da faixa" in caplog.text
+    assert "humidity fora da faixa" in caplog.text
+
+
+def test_parse_station_drops_measurements_above_physical_ranges(caplog):
+    invalid_measure_csv = STATION_CSV.replace(
+        "2024/01/01;0000 UTC;0,2;24,5;88;1,2;",
+        "2024/01/01;0000 UTC;1001;61;101;151;",
+    )
+
+    station, frame = parse_station(invalid_measure_csv, source="A904.csv")
+    documents = to_documents(station, frame)
+
+    assert len(documents) == 1
+    assert documents[0]["ts"].hour == 1
+    for metric in ("rain_mm", "air_temp", "humidity", "wind_ms"):
+        assert f"{metric} fora da faixa" in caplog.text
+    assert "nenhuma medida válida" in caplog.text
+
+
+def test_parse_station_drops_invalid_utc_time(caplog):
+    invalid_time_csv = STATION_CSV.replace("0000 UTC", "2500 UTC", 1)
+
+    _, frame = parse_station(invalid_time_csv, source="A904.csv")
+
+    assert len(frame) == 1
+    assert frame.iloc[0]["ts"].hour == 1
+    assert "hora inválida" in caplog.text
+
+
 @pytest.mark.parametrize("replacement", ["LATITUDE:;nan", "LATITUDE:;91"])
 def test_parse_station_rejects_invalid_wgs84_coordinates(replacement):
     with pytest.raises(ValueError, match="coordenadas WGS84 inválidas"):
@@ -189,6 +245,110 @@ def test_sidra_numeric_parser_handles_brazilian_format_and_missing_values():
     assert parse_number("...") is None
     assert parse_number("Infinity") is None
     assert parse_number("1e999") is None
+
+
+@pytest.mark.parametrize(
+    ("variable", "value", "metric"),
+    [
+        ("Área plantada ou destinada à colheita (Hectares)", "-5", "planted_area_ha"),
+        ("Quantidade produzida (Toneladas)", "-10", "production_t"),
+        (
+            "Rendimento médio da produção (Quilogramas por Hectare)",
+            "-2",
+            "yield_kg_ha",
+        ),
+    ],
+)
+def test_sidra_import_drops_negative_metrics(variable, value, metric, caplog):
+    rows = [
+        {
+            "Ano": "2024",
+            "Município (Código)": "5100201",
+            "Município": "Água Boa",
+            "Unidade da Federação": "MT",
+            "Produto das lavouras temporárias e permanentes": "Soja (em grão)",
+            "Variável": "Área plantada ou destinada à colheita (Hectares)",
+            "Valor": "1.234",
+        },
+        {
+            "Ano": "2024",
+            "Município (Código)": "5100201",
+            "Município": "Água Boa",
+            "Unidade da Federação": "MT",
+            "Produto das lavouras temporárias e permanentes": "Soja (em grão)",
+            "Variável": "Quantidade produzida (Toneladas)",
+            "Valor": "5.678",
+        },
+        {
+            "Ano": "2024",
+            "Município (Código)": "5100201",
+            "Município": "Água Boa",
+            "Unidade da Federação": "MT",
+            "Produto das lavouras temporárias e permanentes": "Soja (em grão)",
+            "Variável": "Rendimento médio da produção (Quilogramas por Hectare)",
+            "Valor": "4.600",
+        },
+    ]
+    target = next(row for row in rows if row["Variável"] == variable)
+    target["Valor"] = value
+
+    records = parse_frame(pd.DataFrame(rows), 2024, ["MT"], ["soja"])
+
+    assert records == []
+    assert "linha SIDRA" in caplog.text
+    assert metric in caplog.text
+    assert "valor ignorado" in caplog.text
+
+
+def test_sidra_import_drops_negative_metrics_in_wide_format(caplog):
+    frame = pd.DataFrame(
+        [
+            {
+                "Ano": "2024",
+                "Município (Código)": "5100201",
+                "Município": "Água Boa",
+                "UF": "MT",
+                "Produto": "Soja",
+                "Área plantada (Hectares)": "-5",
+                "Quantidade produzida (Toneladas)": "10",
+                "Rendimento médio da produção (Quilogramas por Hectare)": "4600",
+            }
+        ]
+    )
+
+    records = parse_frame(frame, 2024, ["MT"], ["soja"])
+
+    assert records == []
+    assert "planted_area_ha fora da faixa" in caplog.text
+
+
+def test_ibge_upsert_rejects_negative_metrics(caplog):
+    class FakeCollection:
+        def __init__(self):
+            self.documents = {}
+
+        def bulk_write(self, operations, ordered):
+            raise AssertionError("registro inválido não deve chegar ao bulk_write")
+
+    class FakeDb:
+        ibge_production = FakeCollection()
+
+    db = FakeDb()
+    record = {
+        "ibge_code": "5100201",
+        "crop": "soja",
+        "year": 2024,
+        "municipality": "Água Boa",
+        "state": "MT",
+        "planted_area_ha": -5,
+        "production_t": 10,
+        "yield_kg_ha": 4600,
+    }
+
+    assert upsert_records(db, [record]) == 0
+    assert db.ibge_production.documents == {}
+    assert "registro SIDRA descartado" in caplog.text
+    assert "planted_area_ha" in caplog.text
 
 
 def test_ibge_upsert_uses_compound_key_and_is_repeatable():

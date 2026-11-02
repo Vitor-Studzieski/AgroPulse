@@ -20,6 +20,36 @@ from workers.common import get_db, setup_logging
 log = logging.getLogger("ibge")
 BATCH_SIZE = 500
 DEFAULT_CROPS = ("soja", "milho", "cana")
+METRIC_NAMES = ("planted_area_ha", "production_t", "yield_kg_ha")
+
+
+def invalid_metrics(record):
+    invalid = {}
+    for metric in METRIC_NAMES:
+        value = record.get(metric)
+        if value is None:
+            continue
+        try:
+            number = float(value)
+        except (TypeError, ValueError, OverflowError):
+            invalid[metric] = value
+            continue
+        if not math.isfinite(number) or number < 0:
+            invalid[metric] = value
+    return invalid
+
+
+def set_metric(record, metric, value, row_number):
+    if value is not None and (not math.isfinite(value) or value < 0):
+        log.warning(
+            "linha SIDRA %s: %s fora da faixa [0, sem máximo]: %s; valor ignorado",
+            row_number,
+            metric,
+            value,
+        )
+        record[metric] = None
+        return
+    record[metric] = value
 
 STATE_CODES = {
     "11": "RO", "12": "AC", "13": "AM", "14": "RR", "15": "PA", "16": "AP",
@@ -174,7 +204,7 @@ def parse_frame(frame, year, states, crops=DEFAULT_CROPS):
     # SIDRA CSV values are strings: retain their spelling for Brazilian decimal
     # separators and avoid converting municipality codes to floating point.
     records = {}
-    for row in frame.to_dict("records"):
+    for row_number, row in enumerate(frame.to_dict("records"), start=2):
         row_year = parse_number(row[dimensions["year"]])
         code_value = str(row[dimensions["ibge_code"]]).strip()
         if code_value.endswith(".0"):
@@ -217,16 +247,15 @@ def parse_frame(frame, year, states, crops=DEFAULT_CROPS):
                 target = "yield_kg_ha"
             else:
                 continue
-            record[target] = parse_number(row[value_column])
+            set_metric(record, target, parse_number(row[value_column]), row_number)
         else:
             for target, column in wide_columns.items():
-                record[target] = parse_number(row[column])
+                set_metric(record, target, parse_number(row[column]), row_number)
 
-    required_metrics = ("planted_area_ha", "production_t", "yield_kg_ha")
     return [
         record
         for record in records.values()
-        if all(record.get(metric) is not None for metric in required_metrics)
+        if all(record.get(metric) is not None for metric in METRIC_NAMES)
     ]
 
 
@@ -237,9 +266,24 @@ def read_sidra_csv(path):
 
 def upsert_records(db, records, batch_size=BATCH_SIZE):
     """Idempotently upsert records using the schema's unique compound key."""
+    valid_records = []
+    for record in records:
+        invalid = invalid_metrics(record)
+        if invalid:
+            log.warning(
+                "registro SIDRA descartado (código=%s, cultura=%s, ano=%s): "
+                "medidas inválidas ou fora da faixa: %s",
+                record.get("ibge_code"),
+                record.get("crop"),
+                record.get("year"),
+                invalid,
+            )
+            continue
+        valid_records.append(record)
+
     total = 0
-    for offset in range(0, len(records), batch_size):
-        batch = records[offset : offset + batch_size]
+    for offset in range(0, len(valid_records), batch_size):
+        batch = valid_records[offset : offset + batch_size]
         operations = [
             UpdateOne(
                 {"ibge_code": doc["ibge_code"], "crop": doc["crop"], "year": doc["year"]},

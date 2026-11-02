@@ -1,7 +1,8 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useRef, useState } from "react";
 import { User } from "@/lib/api";
+import { useDialogFocus } from "@/components/use-dialog-focus";
 
 export type AccountUpdate = {
   current_password: string;
@@ -24,17 +25,11 @@ export function AccountDialog({
   onDelete: (currentPassword: string) => Promise<void>;
 }) {
   const [error, setError] = useState("");
+  const dialogRef = useRef<HTMLElement | null>(null);
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  useDialogFocus(dialogRef, onClose);
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -75,7 +70,7 @@ export function AccountDialog({
 
   return (
     <div className="modal-scrim" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
-      <section className="modal-card" role="dialog" aria-modal="true" aria-labelledby="account-dialog-title">
+      <section ref={dialogRef} tabIndex={-1} className="modal-card" role="dialog" aria-modal="true" aria-labelledby="account-dialog-title">
         <div className="modal-heading">
           <div>
             <h2 id="account-dialog-title">Minha conta</h2>

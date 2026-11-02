@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import L from "leaflet";
-import { CircleMarker, MapContainer, Polygon, TileLayer, useMap, useMapEvents } from "react-leaflet";
+import { CircleMarker, MapContainer, Polygon, TileLayer, ZoomControl, useMap, useMapEvents } from "react-leaflet";
 import type { Field } from "@/lib/api";
 
 type GeoPoint = [number, number]; // longitude, latitude
@@ -13,9 +13,18 @@ type Props = {
   center?: [number, number]; // latitude, longitude
   drawPoints?: GeoPoint[];
   onDraw?: (point: GeoPoint) => void;
+  mini?: boolean;
 };
 
-const colors = ["#5e8d57", "#c29c50", "#46887a", "#81994c", "#718ca0"];
+const cropColor = (crop: Field["crop"]): string => ({
+  soja: "var(--crop-soja)",
+  milho: "var(--crop-milho)",
+  cana: "var(--crop-cana)",
+  cafe: "var(--crop-other)",
+  trigo: "var(--crop-other)",
+  algodao: "var(--crop-other)",
+})[crop];
+const cropLabel: Record<Field["crop"], string> = { soja: "Soja", milho: "Milho", cana: "Cana-de-açúcar", cafe: "Café", trigo: "Trigo", algodao: "Algodão" };
 
 function MapClick({ onDraw }: { onDraw?: (point: GeoPoint) => void }) {
   useMapEvents({ click: (event) => onDraw?.([event.latlng.lng, event.latlng.lat]) });
@@ -37,21 +46,22 @@ function FieldLayers({ fields, selectedFieldId, drawPoints, center, onSelect }: 
   useEffect(() => {
     const polygons = L.geoJSON(features, {
       style: (feature): L.PathOptions => {
-        const index = Math.max(0, fields.findIndex((field) => field.id === feature?.properties?.id));
+        const field = fields.find((item) => item.id === feature?.properties?.id);
         const active = feature?.properties?.id === selectedFieldId;
         return {
-          color: active ? "#294b32" : colors[index % colors.length],
+          color: active ? "var(--color-sidebar)" : cropColor(field?.crop ?? "soja"),
           weight: active ? 3 : 2,
           opacity: 0.96,
-          fillColor: colors[index % colors.length],
-          fillOpacity: active ? 0.46 : 0.28,
+          fillColor: cropColor(field?.crop ?? "soja"),
+          fillOpacity: 0.35,
           bubblingMouseEvents: false,
         };
       },
       onEachFeature: (feature, layer) => {
         const name = String(feature.properties?.name ?? "Talhão");
-        const area = Number(feature.properties?.area_ha ?? 0);
-        layer.bindTooltip(`${name} · ${new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 1 }).format(area)} ha`);
+        const field = fields.find((item) => item.id === feature.properties?.id);
+        layer.bindTooltip(`${name} · ${cropLabel[field?.crop ?? "soja"]}`, { permanent: true, direction: "center", className: "field-label", opacity: 1 });
+        layer.on("mouseover", () => { const id = String(feature.properties?.id ?? ""); if (id) onSelect?.(id); });
         layer.on("click", () => {
           const id = String(feature.properties?.id ?? "");
           if (id) onSelect?.(id);
@@ -67,9 +77,7 @@ function FieldLayers({ fields, selectedFieldId, drawPoints, center, onSelect }: 
       if (center) map.setView(center, 14);
       return;
     }
-    const selected = fields.find((field) => field.id === selectedFieldId);
-    const target = selected ? [selected] : fields;
-    const coordinates = target.flatMap((field) => field.boundary?.coordinates?.flatMap((ring) => ring.map(([lng, lat]) => [lat, lng] as L.LatLngTuple)) ?? []);
+    const coordinates = fields.flatMap((field) => field.boundary?.coordinates?.flatMap((ring) => ring.map(([lng, lat]) => [lat, lng] as L.LatLngTuple)) ?? []);
     if (coordinates.length) map.fitBounds(L.latLngBounds(coordinates).pad(0.18), { maxZoom: 15, animate: false });
     else if (center) map.setView(center, 13);
   }, [center?.[0], center?.[1], drawing, fields, map, selectedFieldId]);
@@ -79,13 +87,16 @@ function FieldLayers({ fields, selectedFieldId, drawPoints, center, onSelect }: 
     {drawPoints.map(([lng, lat], index) => <CircleMarker key={`${lng}-${lat}-${index}`} center={[lat, lng]} radius={5} pathOptions={{ color: "#416d45", weight: 2, fillColor: "#fff", fillOpacity: 1, interactive: false }}/>)}</> : null;
 }
 
-export default function LeafletMap({ fields, selectedFieldId, onSelect, center = [-15.78, -47.93], drawPoints, onDraw }: Props) {
+export default function LeafletMap({ fields, selectedFieldId, onSelect, center = [-15.78, -47.93], drawPoints, onDraw, mini = false }: Props) {
+  const [baseLayer, setBaseLayer] = useState<"satellite" | "map">("satellite");
   return <div className={`map-frame ${drawPoints !== undefined ? "map-draw-mode" : ""}`}>
-    <MapContainer center={center} zoom={fields.length ? 13 : 5} scrollWheelZoom className="leaflet-field-map" zoomControl>
-      <TileLayer attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors' url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"/>
+    <MapContainer center={center} zoom={fields.length ? 13 : 5} scrollWheelZoom className="leaflet-field-map" zoomControl={false}>
+      {!mini && <ZoomControl position="bottomright"/>}
+      {baseLayer === "satellite" ? <TileLayer attribution='Tiles &copy; Esri' url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"/> : <TileLayer attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors' url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"/>}
       <FieldLayers fields={fields} selectedFieldId={selectedFieldId} drawPoints={drawPoints} center={center} onSelect={onSelect}/>
       {drawPoints !== undefined && <MapClick onDraw={onDraw}/>}
     </MapContainer>
+    {!mini && <div className="map-layer-switch" role="group" aria-label="Camada do mapa"><button type="button" className={baseLayer === "satellite" ? "active" : ""} onClick={() => setBaseLayer("satellite")}>Satélite</button><button type="button" className={baseLayer === "map" ? "active" : ""} onClick={() => setBaseLayer("map")}>Mapa</button></div>}
     {drawPoints !== undefined && <div className="map-help">Clique no mapa para adicionar vértices <span>·</span> {drawPoints.length} ponto{drawPoints.length === 1 ? "" : "s"}</div>}
   </div>;
 }

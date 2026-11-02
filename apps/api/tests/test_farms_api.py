@@ -53,6 +53,23 @@ def test_invalid_state_is_rejected(monkeypatch):
     assert response.status_code == 422
 
 
+def test_nonfinite_coordinates_return_json_422(monkeypatch):
+    client, fake = make_client(monkeypatch)
+    body = (
+        '{"name":"Fazenda Teste","municipality":"Sorriso","state":"MT",'
+        '"location":{"type":"Point","coordinates":[NaN,-12.54]}}'
+    )
+    try:
+        response = client.post(
+            "/farms", content=body, headers={"Content-Type": "application/json"}
+        )
+    finally:
+        app.dependency_overrides.clear()
+    assert response.status_code == 422
+    assert response.json()["detail"][0]["input"][0] == "nan"
+    assert fake.saved is None
+
+
 def test_protected_route_requires_token():
     response = TestClient(app).get("/farms")
     assert response.status_code == 401

@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
+from app.datetime_utils import as_utc
 from app.db import db
 from app.deps import get_owned_alert, load_owned_field, owned_field_ids, to_object_id
 from app.models import AlertIn, AlertOut, AlertStatus, AlertUpdate
@@ -28,7 +29,7 @@ async def create_alert(body: AlertIn, user: dict = Depends(current_user)):
     )
     if not is_breached:
         raise HTTPException(status_code=422, detail="value não viola a regra de alerta")
-    if body.triggered_at.replace(tzinfo=None) > datetime.now(timezone.utc).replace(tzinfo=None):
+    if as_utc(body.triggered_at) > datetime.now(timezone.utc):
         raise HTTPException(status_code=422, detail="triggered_at não pode estar no futuro")
     document = body.model_dump(exclude={"field_id", "rule_id"})
     document.update({"field_id": field["_id"], "rule_id": rule["_id"], "status": "open"})
@@ -82,12 +83,12 @@ async def update_alert(
         await db.alerts.update_one({"_id": alert["_id"]}, {"$unset": {"resolved_at": ""}})
     resolved_at = changes.get("resolved_at")
     if resolved_at is not None:
-        normalized_resolved_at = resolved_at.replace(tzinfo=None)
-        if normalized_resolved_at < alert["triggered_at"].replace(tzinfo=None):
+        normalized_resolved_at = as_utc(resolved_at)
+        if normalized_resolved_at < as_utc(alert["triggered_at"]):
             raise HTTPException(
                 status_code=422, detail="resolved_at não pode anteceder triggered_at"
             )
-        if normalized_resolved_at > datetime.now(timezone.utc).replace(tzinfo=None):
+        if normalized_resolved_at > datetime.now(timezone.utc):
             raise HTTPException(status_code=422, detail="resolved_at não pode estar no futuro")
     if changes:
         await db.alerts.update_one({"_id": alert["_id"]}, {"$set": changes})
