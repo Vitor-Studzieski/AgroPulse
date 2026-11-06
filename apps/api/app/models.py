@@ -244,6 +244,7 @@ class OperationIn(ApiInputModel):
     type: OperationType
     date: datetime
     cost_brl: NonNegativeFiniteFloat | None = None
+    source: Literal["simulated", "real"] = "simulated"
     details: dict = Field(default_factory=dict)
 
 
@@ -253,6 +254,7 @@ class OperationUpdate(ApiInputModel):
     type: OperationType = None
     date: datetime = None
     cost_brl: NonNegativeFiniteFloat | None = None
+    source: Literal["simulated", "real"] | None = None
     details: dict = None
 
     @model_validator(mode="after")
@@ -268,23 +270,33 @@ class OperationOut(ApiModel):
     type: OperationType
     date: datetime
     cost_brl: float | None = None
+    source: Literal["simulated", "real"] = "simulated"
     details: dict = Field(default_factory=dict)
+    created_at: datetime | None = None
+    created_by: str | None = None
+    updated_at: datetime | None = None
+    updated_by: str | None = None
+    history: list[dict] = Field(default_factory=list)
 
 
 class SensorIn(ApiInputModel):
     device_id: str = Field(min_length=1, max_length=120)
     field_id: PyObjectId
+    location: Point | None = None
+    source: Literal["simulated", "real"] = "simulated"
     active: bool = True
 
 
 class SensorUpdate(ApiInputModel):
     device_id: str = Field(default=None, min_length=1, max_length=120)
     field_id: str = None
+    location: Point = None
+    source: Literal["simulated", "real"] = None
     active: bool = None
 
     @model_validator(mode="after")
     def required_update_values_are_not_null(self):
-        reject_null_patch_fields(self, ("device_id", "field_id", "active"))
+        reject_null_patch_fields(self, ("device_id", "field_id", "location", "source", "active"))
         return self
 
 
@@ -293,6 +305,8 @@ class SensorOut(ApiModel):
     device_id: str
     field_id: PyObjectId
     farm_id: PyObjectId
+    location: Point | None = None
+    source: Literal["simulated", "real"] = "simulated"
     active: bool
 
 
@@ -370,6 +384,7 @@ class ReadingLatestOut(ApiModel):
     soil_temp: float | None = None
     air_temp: float | None = None
     rainfall_mm: float | None = None
+    source: Literal["simulated", "real"] = "simulated"
 
 
 class SeriesPointOut(ApiModel):
@@ -378,6 +393,26 @@ class SeriesPointOut(ApiModel):
     min: float | None = None
     max: float | None = None
     readings: int
+
+
+class IrrigationWindowOut(ApiModel):
+    avg_soil_moisture: float | None = None
+    sensors: int = 0
+    readings: int = 0
+
+
+class IrrigationResponseOut(ApiModel):
+    operation_id: str
+    date: datetime
+    source: Literal["simulated", "real"]
+    reading_source: Literal["simulated"] = "simulated"
+    water_depth_mm: float | None = None
+    duration_hours: float | None = None
+    method: str | None = None
+    window_hours: int
+    before: IrrigationWindowOut
+    after: IrrigationWindowOut
+    delta_percentage_points: float | None = None
 
 
 class NearbyStationOut(ApiModel):

@@ -3,7 +3,7 @@ import asyncio
 from datetime import datetime, timezone
 
 from app.db import client, db
-from app.geo import area_ha, centroid, square
+from app.geo import area_ha, centroid, spread_points, square
 from app.security import hash_password
 
 DEMO_EMAIL = "demo@agropulse.dev"
@@ -76,17 +76,27 @@ async def ensure_field(farm_id, index, now):
     return field["_id"]
 
 
-async def ensure_sensor(farm_id, field_id, field_index, sensor_index):
+async def ensure_sensor(farm_id, field_id, field_index, sensor_index, location):
     document = {
         "device_id": f"AP-{field_index + 1:04d}-{sensor_index + 1:02d}",
         "field_id": field_id,
         "farm_id": farm_id,
+        "location": {"type": "Point", "coordinates": location},
+        "source": "simulated",
         "active": True,
     }
     await db.sensors.update_one(
         {"device_id": document["device_id"]},
         {"$setOnInsert": document},
         upsert=True,
+    )
+    await db.sensors.update_one(
+        {"device_id": document["device_id"], "location": {"$exists": False}},
+        {"$set": {"location": document["location"]}},
+    )
+    await db.sensors.update_one(
+        {"device_id": document["device_id"], "source": {"$exists": False}},
+        {"$set": {"source": "simulated"}},
     )
 
 
@@ -132,8 +142,10 @@ async def seed(fields_count, sensors_per_field):
     for index in range(fields_count):
         field_id = await ensure_field(farm_id, index, now)
         field_ids.append(field_id)
-        for sensor_index in range(sensors_per_field):
-            await ensure_sensor(farm_id, field_id, index, sensor_index)
+        geometry = build_field(farm_id, index, now)["boundary"]["coordinates"]
+        locations = spread_points(geometry, sensors_per_field)
+        for sensor_index, location in enumerate(locations):
+            await ensure_sensor(farm_id, field_id, index, sensor_index, location)
         await ensure_alert_rule(field_id)
 
     print(

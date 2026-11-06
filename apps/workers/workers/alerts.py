@@ -22,9 +22,28 @@ def breached(value, operator, threshold):
 
 def window_average(db, rule):
     since = datetime.now(UTC) - timedelta(minutes=rule["window_minutes"])
+    active_sensor_ids = [
+        sensor["_id"]
+        for sensor in db.sensors.find({"field_id": rule["field_id"], "active": True}, {"_id": 1})
+    ]
+    if not active_sensor_ids:
+        return None
     pipeline = [
-        {"$match": {"meta.field_id": rule["field_id"], "ts": {"$gte": since}}},
-        {"$group": {"_id": None, "value": {"$avg": f"${rule['metric']}"}}},
+        {
+            "$match": {
+                "meta.field_id": rule["field_id"],
+                "meta.sensor_id": {"$in": active_sensor_ids},
+                "ts": {"$gte": since},
+                rule["metric"]: {"$type": "number"},
+            }
+        },
+        {
+            "$group": {
+                "_id": "$meta.sensor_id",
+                "sensor_avg": {"$avg": f"${rule['metric']}"},
+            }
+        },
+        {"$group": {"_id": None, "value": {"$avg": "$sensor_avg"}}},
     ]
     result = list(db.sensor_readings.aggregate(pipeline))
     return result[0]["value"] if result else None

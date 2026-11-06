@@ -26,6 +26,13 @@ export class ApiError extends Error {
   }
 }
 
+function publishApiStatus(reachable: boolean, updated = false): void {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new CustomEvent("agropulse:api-status", {
+    detail: { reachable, updated, at: Date.now() },
+  }));
+}
+
 export async function apiFetch<T>(path: string, token?: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers);
   const isForm = init.body instanceof FormData || init.body instanceof URLSearchParams;
@@ -36,10 +43,12 @@ export async function apiFetch<T>(path: string, token?: string, init: RequestIni
   try {
     response = await fetch(apiUrl(path), { ...init, headers, cache: "no-store" });
   } catch {
+    publishApiStatus(false);
     throw new Error("Não foi possível conectar à API. Verifique se o serviço está disponível e tente novamente.");
   }
 
   if (!response.ok) {
+    publishApiStatus(true);
     let body: unknown;
     try {
       body = await response.json();
@@ -59,9 +68,42 @@ export async function apiFetch<T>(path: string, token?: string, init: RequestIni
     }
     throw new ApiError(response.status, errorMessage(response.status, body));
   }
-  if (response.status === 204) return undefined as T;
-  if (response.status === 205) return undefined as T;
-  return response.json() as Promise<T>;
+  if (response.status === 204 || response.status === 205) {
+    publishApiStatus(true, true);
+    return undefined as T;
+  }
+  try {
+    const result = await response.json() as T;
+    publishApiStatus(true, true);
+    return result;
+  } catch (error) {
+    publishApiStatus(true);
+    throw error;
+  }
+}
+
+export async function apiBlob(path: string, token: string): Promise<Blob> {
+  let response: Response;
+  try {
+    response = await fetch(apiUrl(path), { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" });
+  } catch {
+    publishApiStatus(false);
+    throw new Error("Não foi possível conectar à API. Verifique se o serviço está disponível e tente novamente.");
+  }
+  if (!response.ok) {
+    publishApiStatus(true);
+    let body: unknown;
+    try { body = await response.json(); } catch { body = await response.text().catch(() => ""); }
+    throw new Error(errorMessage(response.status, body));
+  }
+  try {
+    const result = await response.blob();
+    publishApiStatus(true, true);
+    return result;
+  } catch (error) {
+    publishApiStatus(true);
+    throw error;
+  }
 }
 
 export type User = { id: string; name: string; email: string; role: string };
@@ -102,9 +144,31 @@ export type Operation = {
   type: "plantio" | "adubacao" | "aplicacao" | "irrigacao" | "colheita";
   date: string;
   cost_brl?: number | null;
+  source?: "simulated" | "real";
   details: Record<string, unknown>;
+  created_at?: string;
+  created_by?: string;
+  updated_at?: string;
+  updated_by?: string;
+  history?: { at: string; by: string; action: string; changes?: Record<string, unknown> }[];
 };
-export type Sensor = { id: string; device_id: string; field_id: string; farm_id: string; active: boolean };
+export type OperationAttachment = { file_id: string; filename: string; content_type: string; size: number; uploaded_at?: string; uploaded_by?: string };
+export type IrrigationMeasurementWindow = { avg_soil_moisture: number | null; sensors: number; readings: number };
+export type IrrigationResponse = {
+  operation_id: string;
+  date: string;
+  source: "simulated" | "real";
+  reading_source: "simulated";
+  water_depth_mm: number | null;
+  duration_hours: number | null;
+  method: string | null;
+  window_hours: number;
+  before: IrrigationMeasurementWindow;
+  after: IrrigationMeasurementWindow;
+  delta_percentage_points: number | null;
+};
+export type GeoPoint = { type: "Point"; coordinates: [longitude: number, latitude: number] };
+export type Sensor = { id: string; device_id: string; field_id: string; farm_id: string; location?: GeoPoint | null; source?: "simulated" | "real"; active: boolean };
 export type SeriesPoint = { bucket: string; value: number; min?: number; max?: number; readings?: number };
 export type Reading = {
   sensor_id: string;
@@ -113,6 +177,7 @@ export type Reading = {
   soil_temp?: number;
   air_temp?: number;
   rainfall_mm?: number;
+  source?: "simulated" | "real";
 };
 export type WeatherHistory = {
   station: { code: string; name?: string | null; state?: string | null; distance_km: number } | null;

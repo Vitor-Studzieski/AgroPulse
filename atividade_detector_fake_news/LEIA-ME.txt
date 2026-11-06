@@ -1,0 +1,21 @@
+ATIVIDADE — DETECTOR DE FAKE NEWS (SIMPLIFICADO)
+
+ABERTURA
+Abra Detector_Fake_News.ows no Orange. Os widgets File carregam os arquivos .tab desta mesma pasta.
+
+O QUE O FLUXO FAZ
+• Compara palavras em duas nuvens: títulos de estilo informativo e títulos fictícios/sensacionalistas.
+• Aplica Sentiment Analysis com o método Multilingual e idioma Português (pt), enviando os escores para uma tabela.
+• Pré-processa texto em português, cria Bag of Words e treina uma Árvore de Decisão.
+• Exibe a árvore, executa validação cruzada de 10 partes e mostra a matriz de confusão.
+
+DADOS E LIMITAÇÕES
+O conjunto contém 60 títulos criados para esta atividade: 30 por classe. São exemplos sintéticos, não manchetes extraídas de veículos e não fatos checados. “Real (estilo informativo)” representa estilo neutro/informativo; “Fake (fictícia/sensacionalista)” representa exemplos inventados e exagerados.
+
+A árvore aprende padrões deste pequeno conjunto e não é um detector confiável de notícias reais. Sentimento mede pistas lexicais de polaridade; não determina veracidade. Uma análise factual exigiria um corpus maior, origem documentada, rótulos verificados e avaliação em dados independentes.
+
+ARQUIVOS
+• titulos_fake_news.csv — tabela consolidada (CSV).
+• titulos_fake_news.tab — entrada principal do Orange (60 títulos).
+• titulos_reais.tab — dados para a nuvem de estilo informativo.
+• titulos_sensacionalistas.tab — dados para a nuvem de estilo sensacionalista.

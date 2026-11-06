@@ -64,6 +64,8 @@ sensors = [
         "device_id": "AP-DEMO-001",
         "field_id": FIELD_ID,
         "farm_id": FARM_ID,
+        "location": {"type": "Point", "coordinates": [DEMO_LON, DEMO_LAT]},
+        "source": "simulated",
         "active": True,
     }
 ]
@@ -289,7 +291,7 @@ class Handler(BaseHTTPRequestHandler):
             sensor = next((item for item in sensors if _owner_id(item) == owner_id and item.get("field_id") == field["id"]), None)
             if sensor is None:
                 return self._send(200, [])
-            return self._send(200, [{"sensor_id": sensor["id"], "ts": NOW, "soil_moisture": 38.4, "soil_temp": 24.2, "air_temp": 29.1, "rainfall_mm": 0.0}])
+            return self._send(200, [{"sensor_id": sensor["id"], "ts": NOW, "soil_moisture": 38.4, "soil_temp": 24.2, "air_temp": 29.1, "rainfall_mm": 0.0, "source": sensor.get("source", "simulated")}])
         if path == "/seasons":
             field_id = query.get("field_id", [None])[0]
             if field_id and _owned_item(fields, field_id, owner_id) is None:
@@ -301,13 +303,35 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(404, {"detail": "talhão não encontrado"})
             collection = {"/operations": operations, "/sensors": sensors, "/alert-rules": rules, "/alerts": alerts}[path]
             return self._send(200, _visible_items(collection, owner_id, field_id))
-        analytics_match = re.fullmatch(r"/analytics/fields/([^/]+)/(series|weather)", path)
+        analytics_match = re.fullmatch(r"/analytics/fields/([^/]+)/(series|weather|irrigation-response)", path)
         if analytics_match:
             field_id, metric = analytics_match.groups()
             if _owned_item(fields, field_id, owner_id) is None:
                 return self._send(404, {"detail": "talhão não encontrado"})
             if metric == "series":
                 return self._send(200, [{"bucket": NOW, "value": 38.4, "min": 31.0, "max": 44.2, "readings": 12}])
+            if metric == "irrigation-response":
+                response = []
+                for operation in operations:
+                    if _owner_id(operation) != owner_id or operation.get("field_id") != field_id or operation.get("type") != "irrigacao":
+                        continue
+                    operation_data = operation.get("details", {}).get("operation_data", {})
+                    response.append(
+                        {
+                            "operation_id": operation["id"],
+                            "date": operation.get("date", NOW),
+                            "source": operation.get("source", "simulated"),
+                            "reading_source": "simulated",
+                            "water_depth_mm": operation_data.get("water_depth_mm"),
+                            "duration_hours": operation_data.get("duration_hours"),
+                            "method": operation_data.get("method"),
+                            "window_hours": int(query.get("window_hours", [24])[0]),
+                            "before": {"avg_soil_moisture": 31.2, "sensors": 1, "readings": 12},
+                            "after": {"avg_soil_moisture": 34.6, "sensors": 1, "readings": 12},
+                            "delta_percentage_points": 3.4,
+                        }
+                    )
+                return self._send(200, response)
             return self._send(
                 200,
                 {
@@ -427,6 +451,8 @@ class Handler(BaseHTTPRequestHandler):
                 if field is None:
                     return self._send(404, {"detail": "talhão não encontrado"})
                 item.update({"field_id": field["id"], "farm_id": field["farm_id"], "active": item.get("active", True)})
+                item.setdefault("location", field["centroid"])
+                item.setdefault("source", "simulated")
                 sensors.append(item)
             elif path == "/alert-rules":
                 if _owned_item(fields, str(item.get("field_id", "")), owner_id) is None:

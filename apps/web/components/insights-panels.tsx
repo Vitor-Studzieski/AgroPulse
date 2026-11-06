@@ -28,24 +28,34 @@ export function WeatherPanel({ token, fieldId }: { token: string; fieldId: strin
   const [error, setError] = useState("");
   const [days, setDays] = useState(30);
   const [retry, setRetry] = useState(0);
+  const [selectedYear, setSelectedYear] = useState<number | null>(null);
 
   useEffect(() => {
     setDays(30);
+    setSelectedYear(null);
+    setHistory(null);
   }, [fieldId]);
 
   useEffect(() => {
     let active = true;
     setLoading(true);
     setError("");
-    apiFetch<WeatherHistory>(`/analytics/fields/${encodeURIComponent(fieldId)}/weather?days=30`, token)
-      .then((result) => { if (active) setHistory(result); })
+    const query = selectedYear === null ? new URLSearchParams({ days: "30" }) : new URLSearchParams({ year: String(selectedYear) });
+    apiFetch<WeatherHistory>(`/analytics/fields/${encodeURIComponent(fieldId)}/weather?${query}`, token)
+      .then((result) => {
+        if (!active) return;
+        setHistory(result);
+        if (selectedYear === null && result.readings.length === 0 && result.available_years.length) setSelectedYear(result.available_years[0]);
+      })
       .catch((caught) => { if (active) setError(detailOf(caught)); })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
-  }, [fieldId, token, retry]);
+  }, [fieldId, token, selectedYear, retry]);
 
   const cutoff = Date.now() - days * 86_400_000;
-  const visibleReadings = history?.readings.filter((item) => new Date(item.ts).getTime() >= cutoff) ?? [];
+  const visibleReadings = selectedYear === null
+    ? history?.readings.filter((item) => new Date(item.ts).getTime() >= cutoff) ?? []
+    : history?.readings ?? [];
   const latest = visibleReadings.at(-1) ?? history?.readings.at(-1);
   const stale = latest ? Date.now() - new Date(latest.ts).getTime() > 86_400_000 : false;
   const bars = visibleReadings.slice(-24);
@@ -58,8 +68,12 @@ export function WeatherPanel({ token, fieldId }: { token: string; fieldId: strin
       {loading ? <div className="insight-state"><span className="skeleton"/>Carregando histórico climático…</div> : error ? <div className="insight-state insight-error" role="alert"><span>{error}</span><button type="button" className="text-button" onClick={() => setRetry((value) => value + 1)}>Tentar novamente</button></div> : !history?.station ? <div className="insight-state">Nenhuma estação encontrada em até 100 km do talhão.</div> : <>
         <div className="weather-heading-row">
           <div className="station-summary"><strong>{history.station.name ?? history.station.code} · INMET {history.station.code} · {numberLabel(history.station.distance_km)} km</strong></div>
-          <div className="segmented-control weather-period-tabs" role="group" aria-label="Período climático">{[{ days: 1, label: "Hoje" }, { days: 7, label: "7 dias" }, { days: 30, label: "Mês" }].map((item) => <button key={item.days} type="button" className={days === item.days ? "active" : ""} onClick={() => setDays(item.days)}>{item.label}</button>)}</div>
+          <div className="weather-controls">
+            {history.available_years.length > 0 && <label className="weather-year-control">Histórico<select aria-label="Ano do histórico climático" value={selectedYear ?? "recent"} onChange={(event) => setSelectedYear(event.target.value === "recent" ? null : Number(event.target.value))}><option value="recent">Últimos 30 dias</option>{history.available_years.map((year) => <option key={year} value={year}>{year}</option>)}</select></label>}
+            {selectedYear === null && <div className="segmented-control weather-period-tabs" role="group" aria-label="Período climático">{[{ days: 1, label: "Hoje" }, { days: 7, label: "7 dias" }, { days: 30, label: "30 dias" }].map((item) => <button key={item.days} type="button" aria-pressed={days === item.days} className={days === item.days ? "active" : ""} onClick={() => setDays(item.days)}>{item.label}</button>)}</div>}
+          </div>
         </div>
+        {selectedYear !== null && <p className="weather-year-note">Observações importadas do ano-base {selectedYear}.</p>}
         {stale && latest && <span className="weather-stale-tag">Dados desatualizados · última leitura em {new Intl.DateTimeFormat("pt-BR").format(new Date(latest.ts))}</span>}
         {latest ? <>
           <div className="weather-metrics">

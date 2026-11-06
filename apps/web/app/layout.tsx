@@ -3,8 +3,8 @@ import "leaflet/dist/leaflet.css";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "AgroPulse | Gestão rural inteligente",
-  description: "Gerencie fazendas e talhões, acompanhe telemetria e monitore sua produção agrícola.",
+  title: "AgroPulse | Inteligência de campo",
+  description: "Conecte sensores, clima e histórico de manejo para acompanhar cada talhão.",
   icons: { icon: "/field-mark.svg" },
 };
 

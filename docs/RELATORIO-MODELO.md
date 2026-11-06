@@ -8,32 +8,34 @@
 |---|---|
 | Instituição | Fatec Pompéia — Shunji Nishimura |
 | Disciplina | IAL-215 — Banco de Dados NoSQL |
-| Projeto | AgroPulse — plataforma de monitoramento de safra |
+| Projeto | AgroPulse — acompanhamento operacional por talhão |
 | Integrantes | Vitor Studzieski, Maria Fernanda Passos e Lauan Alves Ferneda |
 | Repositório (branch de entrega) | [AgroPulse — feature/agropulse-completion](https://github.com/Vitor-Studzieski/AgroPulse/tree/feature/agropulse-completion) |
 | Pull request para revisão | [PR #1](https://github.com/Vitor-Studzieski/AgroPulse/pull/1) — aberto, sem merge |
 
 ## Resumo
 
-O AgroPulse é uma aplicação acadêmica para organizar fazendas, talhões, safras, operações de campo, sensores e alertas. A solução combina API em Python/FastAPI, interface em Next.js, persistência MongoDB e workers para simulação de telemetria, alertas, pré-agregação e importação de dados públicos. O ambiente local é reproduzível com Docker Compose e constitui o caminho de demonstração sem custo incremental. A disponibilidade de qualquer hospedagem gratuita é de melhor esforço.
+O AgroPulse é uma aplicação acadêmica para manter um diário operacional auditável por talhão e consultar telemetria de umidade e alertas configuráveis. O caso demonstrativo é investigar um alerta, registrar uma irrigação e comparar a média dos sensores nas 24 horas anteriores e posteriores. Essa comparação descreve uma variação temporal; não prova causalidade nem recomenda irrigação. A solução combina API em Python/FastAPI, interface em Next.js, persistência MongoDB e workers para simulação de telemetria, alertas, pré-agregação e importação de dados públicos. O ambiente local é reproduzível com Docker Compose e constitui o caminho de demonstração sem custo incremental. A disponibilidade de qualquer hospedagem gratuita é de melhor esforço.
 
 **Palavras-chave:** MongoDB, FastAPI, Next.js, séries temporais, GeoJSON, agronegócio.
 
 ## 1. Introdução
 
-O acompanhamento de uma safra reúne dados de propriedade, limites geográficos, atividades de campo, sensores e clima. O projeto organiza esses dados em uma aplicação única para apoiar a consulta e a demonstração de operações agrícolas. Este relatório descreve a arquitetura, a modelagem, a implementação e as evidências produzidas pelo grupo.
+O acompanhamento de cada talhão envolve cadastros, registros de manejo e sinais de sensores. O AgroPulse concentra esses registros e permite consultar séries de umidade e alertas por regra no contexto da operação agrícola. O clima importado vem de uma estação de referência próxima, não de medições dentro do talhão. Este relatório descreve a arquitetura, a modelagem, a implementação e as evidências produzidas pelo grupo.
 
 ## 2. Objetivos
 
 ### 2.1 Objetivo geral
 
-Construir uma plataforma acadêmica reproduzível para cadastro e acompanhamento de fazendas e talhões, com telemetria, séries históricas, alertas e contexto climático e produtivo.
+Construir uma plataforma acadêmica reproduzível para registrar operações auditáveis por talhão e consultar alertas e telemetria de umidade antes e depois das atividades de manejo.
 
 ### 2.2 Objetivos específicos
 
 - Implementar autenticação JWT e operações protegidas por propriedade dos dados.
 - Disponibilizar CRUD de fazendas, talhões, safras, operações, sensores e regras/alertas.
+- Rastrear autoria, origem real ou fictícia, custos e comprovantes das operações.
 - Persistir telemetria em coleção MongoDB time series e calcular séries e resumos.
+- Comparar leituras de umidade nas janelas anteriores e posteriores a uma irrigação registrada.
 - Apresentar talhões em mapa GeoJSON e métricas em gráficos horários e diários.
 - Importar dados públicos do INMET e da PAM/SIDRA com recortes limitados.
 - Reproduzir a execução local, os testes e a validação do schema com ferramentas gratuitas.
@@ -120,12 +122,15 @@ O documento [docs/MODELO-DADOS.md](MODELO-DADOS.md) contém campos, índices, ex
 | RF08 | Importador INMET e consulta da estação próxima | A amostra oficial compacta da estação A763/Marília está versionada em `data/imports/inmet-sp-a763-2024.zip` e é carregada por `make demo` (8.784 observações). A API autenticada e a interface posicionam a estação a 27,8 km do campus; quando não há observações nos últimos sete dias, o painel seleciona o ano importado mais recente e mostra o histórico anual. O ZIP oficial completo de 2024 também foi importado em MongoDB descartável, com 40 estações e 351.360 leituras. Evidência complementar `docs/evidencias/painel-visao-geral.png`: período anual 2024, estação A763/Marília e última observação de 31/12/2024 às 20:00 (horário local). |
 | RF09 | Importador SIDRA/PAM e ranking municipal | CSV oficial da PAM/SIDRA 2023 para os 645 municípios de SP em `data/imports/pam-sp-2023.csv`; 1.556 registros completos importados no Mongo local (480 soja, 564 milho, 512 cana), incluindo Pompéia. API autenticada e painel exibiram o ranking de soja de SP. |
 | RF10 | Painel, mapa, clima e ranking | Capturas das telas correspondentes |
+| RF11 | Diário auditável e resposta observada à irrigação | Operações com origem, custos, comprovantes e histórico; painel compara a umidade média por sensor nas janelas de 24 horas antes e depois. Captura do painel a anexar após validação desta versão. |
 
 A interface Next.js autentica pela API FastAPI e oferece o painel e os formulários dos recursos agrícolas. A API verifica o vínculo entre usuário e fazenda antes de operar sobre os dados. Os workers simulam leituras, avaliam regras, enviam webhooks quando configurados e importam dados públicos. Sem webhook, o sistema registra a entrega do alerta no log local. O roteiro detalhado das telas e da apresentação está em [docs/ROTEIRO-APRESENTACAO.md](ROTEIRO-APRESENTACAO.md); as 28 capturas previstas estão revisadas em `docs/evidencias/`, além de uma imagem complementar do painel. As telas 01–08 mostram a interface local da demonstração, e a 09 registra a resposta `200` de `GET /health`. A captura 15 registra 21.006 leituras no momento da consulta; como o simulador continua ativo, a contagem muda durante a execução. A captura 18 confirma o estágio `IXSCAN` pelo índice `crop_1`. A captura 26 mostra os 24 documentos agregados em `field_daily_stats`.
 
+O recorte operacional é demonstrado pelo diário de operações, pela trilha de autoria e comprovantes e pela comparação de leituras de umidade antes e depois de uma irrigação registrada. A comparação agrega primeiro por sensor, mostra o número de sensores e leituras e usa uma janela padrão de 24 horas. A demonstração usa telemetria sintética, e o histórico da estação INMET A763/Marília, a 27,8 km do campus, é apenas contexto regional. O sistema não calcula uma recomendação de irrigação.
+
 ## 7. Testes e verificações
 
-Esta seção registra as verificações executadas e as evidências disponíveis. As suítes de API e workers, o build de produção da interface e os manifests/builds locais foram executados. A branch `feature/agropulse-completion` foi publicada. O run remoto #69 passou para o commit `74d7485`; consulte o PR #1 para os checks do HEAD atual.
+Esta seção registra as verificações executadas e as evidências disponíveis nas datas indicadas. A comparação pós-irrigação foi adicionada em 2026-11-04; as verificações históricas abaixo não cobrem essa alteração e a nova tela ainda precisa de validação integrada e captura. O run remoto #69 passou para o commit `74d7485`; consulte o PR #1 para os checks do HEAD atual.
 
 | Verificação | Resultado observado | Data / evidência |
 |---|---|---|
@@ -145,10 +150,11 @@ Esta seção registra as verificações executadas e as evidências disponíveis
 1. Inicie o ambiente local conforme as instruções de [README.md](../README.md).
 2. Entre com a conta de demonstração criada pelo seed.
 3. Apresente o mapa usando somente o campus da Fatec Pompéia como referência geográfica (`-22.1110`, `-50.1994`). Explique que os polígonos próximos são sintéticos e não representam limites oficiais ou talhões reais do campus.
-4. Mostre fazendas, talhões no mapa, gráfico e cadastros de safras e operações. No painel climático, selecione um ano importado — `2024` para reproduzir o ZIP oficial validado — e indique a data da observação exibida.
-5. Mostre uma regra e um alerta gerado pelo worker; sem webhook, a entrega de demonstração aparece no log.
-6. No MongoDB Compass, mostre coleções, time series, índices, validação e agregação diária.
-7. Mantenha o ambiente local como plano para a apresentação. A stack, o seed e o ranking ficam no computador; sem internet, os tiles do OpenStreetMap podem não carregar o fundo cartográfico.
+4. Mostre o gráfico de umidade e um alerta configurado para o talhão. Na página de operações, abra a comparação “Resposta observada após irrigação” e apresente as médias por sensor, os tamanhos das amostras e a origem da operação e da telemetria. Explique que uma variação temporal não comprova causa.
+5. Apresente o histórico de 2024 da estação INMET A763/Marília como contexto regional — ela fica a 27,8 km do campus — e o ranking PAM/SIDRA como comparação municipal. Nenhuma dessas fontes mede os talhões sintéticos.
+6. Mostre uma regra e um alerta gerado pelo worker; sem webhook, a entrega de demonstração aparece no log.
+7. No MongoDB Compass, mostre coleções, time series, índices, validação e agregação diária.
+8. Mantenha o ambiente local como plano para a apresentação. A stack, o seed e o ranking ficam no computador; sem internet, os tiles do OpenStreetMap podem não carregar o fundo cartográfico.
 
 O vídeo de contingência está salvo em `docs/apresentacao/demonstracao-agropulse.mp4`. É uma gravação contínua e silenciosa de 44 segundos da aba local do AgroPulse no Chrome, codificada em H.264 e 1920 × 972. Os trechos verificados mostram a visão geral, o mapa de talhões e os sensores; a tela de alertas permanece registrada na captura 08 e no roteiro interativo, não neste vídeo.
 
@@ -164,11 +170,11 @@ Limitações verificadas ou pendentes de evidência:
 - A amostra oficial da PAM/SIDRA 2023 para SP está versionada em `data/imports/pam-sp-2023.csv` e é carregada por `make demo` sem consulta externa. O gerador consultou as APIs oficiais e reproduziu o CSV versionado byte a byte. O importador persistiu 1.556 combinações municipais completas; a API autenticada retornou o top 10 de soja por produtividade e o painel exibiu Pompéia na referência oficial regional. Isso não altera a demonstração espacial, que permanece limitada ao campus e a polígonos sintéticos próximos.
 - A branch pública `feature/agropulse-completion` está no remoto `https://github.com/Vitor-Studzieski/AgroPulse` e o PR #1 está aberto para revisão, sem merge. O run #69 passou no commit `74d7485`; após novas atualizações, consulte o PR para conferir os checks do HEAD atual. A capa lista os três integrantes informados pelo grupo.
 
-Como trabalhos futuros, podem ser considerados autenticação de dispositivos e ingestão por gateway, exportação do relatório de safra e avaliação com uma carga de dados maior, preservando os limites financeiros definidos.
+Como evolução do produto, propõe-se relacionar cada irrigação ao alerta ou observação que motivou a ação e incluir chuva medida na propriedade quando disponível. A comparação precisa ser avaliada com dados locais e uma propriedade parceira antes de se apresentar qualquer benefício agronômico. Autenticação de dispositivos, ingestão por gateway, exportação do relatório de safra e avaliação com uma carga de dados maior também permanecem como trabalhos futuros, respeitando os limites financeiros definidos.
 
 ## 10. Conclusão
 
-O AgroPulse reúne CRUD agrícola, persistência MongoDB, telemetria, geodados, análises e workers em uma solução local reproduzível. Antes da apresentação, ensaie o roteiro e confirme que a stack local está disponível.
+O AgroPulse registra operações com autoria, origem, custos e comprovantes, e contextualiza alertas com uma comparação temporal da umidade antes e depois da irrigação. A demonstração usa dados sintéticos e não valida causalidade ou benefício agronômico em campo. Antes da apresentação, valide a nova consulta integrada, atualize as evidências e confirme que a stack local está disponível.
 
 ## Referências
 

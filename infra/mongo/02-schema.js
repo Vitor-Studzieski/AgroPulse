@@ -130,6 +130,8 @@ ensureCollection("sensors", validated({
     device_id: { bsonType: "string" },
     field_id: { bsonType: "objectId" },
     farm_id: { bsonType: "objectId" },
+    location: point,
+    source: { enum: ["simulated", "real"] },
     active: { bsonType: "bool" },
   },
 }));
@@ -197,6 +199,7 @@ database.operations.createIndex({ season_id: 1 });
 
 database.sensors.createIndex({ device_id: 1 }, { unique: true });
 database.sensors.createIndex({ field_id: 1 });
+database.sensors.createIndex({ location: "2dsphere" });
 
 database.alert_rules.createIndex({ active: 1, field_id: 1 });
 database.alerts.createIndex({ field_id: 1, triggered_at: -1 });

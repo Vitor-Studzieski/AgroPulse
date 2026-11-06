@@ -9,6 +9,7 @@ from app.deps import get_owned_farm, get_owned_field
 from app.models import (
     Crop,
     FarmSummaryOut,
+    IrrigationResponseOut,
     Metric,
     NearbyStationOut,
     ProductionRankingOut,
@@ -42,6 +43,62 @@ def daily_summary_point(document, metric):
         if document.get(max_field) is not None
         else None,
         "readings": int(document.get("readings", 0)),
+    }
+
+
+async def irrigation_sensor_windows(field_id, event_at, window_hours):
+    window = timedelta(hours=window_hours)
+    start = event_at - window
+    end = event_at + window
+    pipeline = [
+        {
+            "$match": {
+                "meta.field_id": field_id,
+                "ts": {"$gte": start, "$lt": end},
+                "soil_moisture": {"$type": "number"},
+            }
+        },
+        {
+            "$project": {
+                "window": {"$cond": [{"$lt": ["$ts", event_at]}, "before", "after"]},
+                "sensor_id": "$meta.sensor_id",
+                "soil_moisture": 1,
+            }
+        },
+        {
+            "$group": {
+                "_id": {"window": "$window", "sensor_id": "$sensor_id"},
+                "sensor_avg": {"$avg": "$soil_moisture"},
+                "readings": {"$sum": 1},
+            }
+        },
+        {
+            "$group": {
+                "_id": "$_id.window",
+                "avg_soil_moisture": {"$avg": "$sensor_avg"},
+                "sensors": {"$sum": 1},
+                "readings": {"$sum": "$readings"},
+            }
+        },
+        {
+            "$project": {
+                "_id": 0,
+                "window": "$_id",
+                "avg_soil_moisture": {"$round": ["$avg_soil_moisture", 2]},
+                "sensors": 1,
+                "readings": 1,
+            }
+        },
+    ]
+    cursor = await db.sensor_readings.aggregate(pipeline)
+    windows = await cursor.to_list(length=2)
+    return {
+        item["window"]: {
+            "avg_soil_moisture": item.get("avg_soil_moisture"),
+            "sensors": int(item.get("sensors", 0)),
+            "readings": int(item.get("readings", 0)),
+        }
+        for item in windows
     }
 
 
@@ -81,7 +138,7 @@ async def field_series(
             if (point := daily_summary_point(summary, metric)) is not None
         )
 
-    accumulator = "$sum" if metric == "rainfall_mm" else "$avg"
+    bucket = {"$dateTrunc": {"date": "$ts", "unit": unit}}
     pipeline = [
         {
             "$match": {
@@ -89,16 +146,36 @@ async def field_series(
                 "ts": {"$gte": raw_since},
                 metric: {"$type": "number"},
             }
-        },
-        {
-            "$group": {
-                "_id": {"$dateTrunc": {"date": "$ts", "unit": unit}},
-                "value": {accumulator: f"${metric}"},
-                "min": {"$min": f"${metric}"},
-                "max": {"$max": f"${metric}"},
-                "readings": {"$sum": 1},
-            }
-        },
+        }
+    ]
+    # Aggregate each instrument first, then average instruments. This keeps a
+    # faster-reporting sensor from dominating the field and prevents rainfall
+    # from growing with the number of gauges.
+    value_accumulator = "$sum" if metric == "rainfall_mm" else "$avg"
+    pipeline.extend(
+        [
+            {
+                "$group": {
+                    "_id": {"bucket": bucket, "sensor_id": "$meta.sensor_id"},
+                    "value": {value_accumulator: f"${metric}"},
+                    "min": {"$min": f"${metric}"},
+                    "max": {"$max": f"${metric}"},
+                    "readings": {"$sum": 1},
+                }
+            },
+            {
+                "$group": {
+                    "_id": "$_id.bucket",
+                    "value": {"$avg": "$value"},
+                    "min": {"$min": "$min"},
+                    "max": {"$max": "$max"},
+                    "readings": {"$sum": "$readings"},
+                }
+            },
+        ]
+    )
+    pipeline.extend(
+        [
         {"$sort": {"_id": 1}},
         {
             "$project": {
@@ -110,10 +187,55 @@ async def field_series(
                 "readings": 1,
             }
         },
-    ]
+        ]
+    )
     cursor = await db.sensor_readings.aggregate(pipeline)
     points.extend(await cursor.to_list(length=None))
     return sorted(points, key=lambda point: point["bucket"])
+
+
+@router.get(
+    "/fields/{field_id}/irrigation-response",
+    response_model=list[IrrigationResponseOut],
+)
+async def field_irrigation_response(
+    window_hours: int = Query(24, ge=1, le=168),
+    limit: int = Query(20, ge=1, le=100),
+    field: dict = Depends(get_owned_field),
+):
+    operations = await db.operations.find(
+        {"field_id": field["_id"], "type": "irrigacao"}
+    ).sort("date", -1).limit(limit).to_list(length=limit)
+
+    results = []
+    for operation in operations:
+        event_at = operation["date"]
+        if event_at.tzinfo is None:
+            event_at = event_at.replace(tzinfo=timezone.utc)
+        windows = await irrigation_sensor_windows(field["_id"], event_at, window_hours)
+        before = windows.get("before", {"avg_soil_moisture": None, "sensors": 0, "readings": 0})
+        after = windows.get("after", {"avg_soil_moisture": None, "sensors": 0, "readings": 0})
+        before_avg = before["avg_soil_moisture"]
+        after_avg = after["avg_soil_moisture"]
+        operation_data = operation.get("details", {}).get("operation_data", {})
+        results.append(
+            {
+                "operation_id": str(operation["_id"]),
+                "date": event_at,
+                "source": operation.get("source", "simulated"),
+                "reading_source": "simulated",
+                "water_depth_mm": operation_data.get("water_depth_mm"),
+                "duration_hours": operation_data.get("duration_hours"),
+                "method": operation_data.get("method"),
+                "window_hours": window_hours,
+                "before": before,
+                "after": after,
+                "delta_percentage_points": round(after_avg - before_avg, 2)
+                if before_avg is not None and after_avg is not None
+                else None,
+            }
+        )
+    return results
 
 
 @router.get("/fields/{field_id}/stations", response_model=list[NearbyStationOut])

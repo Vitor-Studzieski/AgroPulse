@@ -2,7 +2,7 @@
 
 import { FormEvent, useRef, useState } from "react";
 import { User } from "@/lib/api";
-import { useDialogFocus } from "@/components/use-dialog-focus";
+import { useDialogAccessibility } from "@/components/use-dialog-accessibility";
 
 export type AccountUpdate = {
   current_password: string;
@@ -25,11 +25,11 @@ export function AccountDialog({
   onDelete: (currentPassword: string) => Promise<void>;
 }) {
   const [error, setError] = useState("");
-  const dialogRef = useRef<HTMLElement | null>(null);
+  const dialogRef = useRef<HTMLElement>(null);
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  useDialogFocus(dialogRef, onClose);
+  useDialogAccessibility(dialogRef, onClose);
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -76,7 +76,7 @@ export function AccountDialog({
             <h2 id="account-dialog-title">Minha conta</h2>
             <p>Atualize seus dados de acesso e perfil.</p>
           </div>
-          <button className="icon-button" aria-label="Fechar" onClick={onClose}>×</button>
+          <button type="button" className="icon-button" aria-label="Fechar" onClick={onClose}>×</button>
         </div>
         <form className="modal-form" onSubmit={submit}>
           <div className="form-grid">

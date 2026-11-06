@@ -110,6 +110,102 @@ def _point_in_ring(point, ring):
     return inside
 
 
+def point_in_polygon(polygon, point):
+    """Return whether a [longitude, latitude] point is strictly inside a polygon."""
+    rings = _as_rings(polygon)
+    outer = rings[0]
+    for index, start in enumerate(outer):
+        if _on_segment(start, outer[(index + 1) % len(outer)], point):
+            return False
+    if not _point_in_ring(point, outer):
+        return False
+    for hole in rings[1:]:
+        for index, start in enumerate(hole):
+            if _on_segment(start, hole[(index + 1) % len(hole)], point):
+                return False
+        if _point_in_ring(point, hole):
+            return False
+    return True
+
+
+def spread_points(polygon, count, occupied=()):
+    """Choose deterministic, separated points inside a GeoJSON polygon."""
+    if count < 1:
+        return []
+    rings = _as_rings(polygon)
+    outer = rings[0]
+    longitudes = [point[0] for point in outer]
+    latitudes = [point[1] for point in outer]
+    min_lon, max_lon = min(longitudes), max(longitudes)
+    min_lat, max_lat = min(latitudes), max(latitudes)
+    center = centroid(rings)["coordinates"]
+    cos_lat = max(0.01, math.cos(math.radians(center[1])))
+    candidates = []
+    seen = set()
+    for grid_size in (18, 32, 56, 96, 160, 256):
+        for row in range(grid_size):
+            lat = min_lat + (row + 0.5) / grid_size * (max_lat - min_lat)
+            for column in range(grid_size):
+                lon = min_lon + (column + 0.5) / grid_size * (max_lon - min_lon)
+                point = [lon, lat]
+                key = (round(lon, 12), round(lat, 12))
+                if key not in seen and point_in_polygon(rings, point):
+                    candidates.append(point)
+                    seen.add(key)
+        if len(candidates) >= count:
+            break
+
+    # A scanline fallback finds interior points in long, narrow polygons that
+    # may not contain any cell center at the coarser grid resolutions.
+    latitudes = sorted({point[1] for ring in rings for point in ring[:-1]})
+    scanlines = [(first + second) / 2 for first, second in zip(latitudes, latitudes[1:]) if first < second]
+    for lat in scanlines:
+        intersections = []
+        for ring in rings:
+            for start, end in zip(ring, ring[1:]):
+                if (start[1] > lat) != (end[1] > lat):
+                    intersections.append(start[0] + (end[0] - start[0]) * (lat - start[1]) / (end[1] - start[1]))
+        intersections.sort()
+        for index in range(0, len(intersections) - 1, 2):
+            point = [(intersections[index] + intersections[index + 1]) / 2, lat]
+            key = (round(point[0], 12), round(point[1], 12))
+            if key not in seen and point_in_polygon(rings, point):
+                candidates.append(point)
+                seen.add(key)
+
+    selected = []
+    used = [list(point) for point in occupied if point and len(point) == 2]
+    while len(selected) < count and candidates:
+        if used:
+            score = lambda point: min(
+                ((point[0] - item[0]) * cos_lat) ** 2 + (point[1] - item[1]) ** 2
+                for item in used
+            )
+            index = max(range(len(candidates)), key=lambda item: score(candidates[item]))
+        else:
+            index = min(
+                range(len(candidates)),
+                key=lambda item: (candidates[item][0] - center[0]) ** 2 * cos_lat**2
+                + (candidates[item][1] - center[1]) ** 2,
+            )
+        point = candidates.pop(index)
+        selected.append(point)
+        used.append(point)
+
+    if len(selected) < count:
+        fallback = center if point_in_polygon(rings, center) else (candidates[0] if candidates else outer[0])
+        selected.extend([list(fallback) for _ in range(count - len(selected))])
+    return selected
+
+
+def interior_point(polygon):
+    rings = _as_rings(polygon)
+    center = centroid(rings)["coordinates"]
+    if point_in_polygon(rings, center):
+        return {"type": "Point", "coordinates": center}
+    return {"type": "Point", "coordinates": spread_points(rings, 1)[0]}
+
+
 def validate_polygon(polygon):
     """Reject self-crossing rings and interior rings outside or overlapping the shell."""
     rings = _as_rings(polygon)

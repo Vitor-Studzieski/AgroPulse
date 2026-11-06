@@ -15,6 +15,7 @@ def build_pipeline(since):
                 "_id": {
                     "field_id": "$meta.field_id",
                     "day": {"$dateTrunc": {"date": "$ts", "unit": "day"}},
+                    "sensor_id": "$meta.sensor_id",
                 },
                 "moisture_avg": {"$avg": "$soil_moisture"},
                 "moisture_min": {"$min": "$soil_moisture"},
@@ -26,9 +27,25 @@ def build_pipeline(since):
                 "air_temp_min": {"$min": "$air_temp"},
                 "air_temp_max": {"$max": "$air_temp"},
                 "rain_mm": {"$sum": "$rainfall_mm"},
-                "rainfall_mm_min": {"$min": "$rainfall_mm"},
-                "rainfall_mm_max": {"$max": "$rainfall_mm"},
                 "readings": {"$sum": 1},
+            }
+        },
+        {
+            "$group": {
+                "_id": {"field_id": "$_id.field_id", "day": "$_id.day"},
+                "moisture_avg": {"$avg": "$moisture_avg"},
+                "moisture_min": {"$min": "$moisture_min"},
+                "moisture_max": {"$max": "$moisture_max"},
+                "soil_temp_avg": {"$avg": "$soil_temp_avg"},
+                "soil_temp_min": {"$min": "$soil_temp_min"},
+                "soil_temp_max": {"$max": "$soil_temp_max"},
+                "air_temp_avg": {"$avg": "$air_temp_avg"},
+                "air_temp_min": {"$min": "$air_temp_min"},
+                "air_temp_max": {"$max": "$air_temp_max"},
+                "rain_mm": {"$avg": "$rain_mm"},
+                "rainfall_mm_min": {"$min": "$rain_mm"},
+                "rainfall_mm_max": {"$max": "$rain_mm"},
+                "readings": {"$sum": "$readings"},
             }
         },
         {

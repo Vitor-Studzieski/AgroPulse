@@ -1,8 +1,14 @@
 # AgroPulse
 
-Plataforma de monitoramento de safra com telemetria de sensores e dados climáticos, construída sobre MongoDB.
+Acompanhamento operacional por talhão, com telemetria comparativa, contexto climático e produtivo e um fluxo rastreável entre alertas e manejo, construído sobre MongoDB.
 
 Projeto da atividade prática **IAL-215 – Banco de Dados NoSQL**.
+
+## Recorte do produto
+
+O AgroPulse é um diário operacional auditável por talhão. O responsável registra quem executou cada atividade, quando, em qual área, com quais custos e equipamentos, e pode anexar comprovantes. O fluxo de triagem liga o alerta ao talhão, permite resolver ou reabrir o evento e iniciar um registro de manejo contextualizado.
+
+O diferencial é combinar uma visão comparativa de umidade e disponibilidade dos sensores entre talhões com a trilha de manejo, contexto climático e dados municipais de produtividade. A análise de irrigação compara a média dos sensores nas 24 horas antes e depois de uma operação registrada. Essa comparação temporal não prova causalidade. O protótipo não recomenda horário nem lâmina de irrigação. Na demonstração, leituras e polígonos são sintéticos; a estação INMET A763/Marília, a 27,8 km do campus, fornece apenas contexto regional.
 
 ## Entrega acadêmica
 
@@ -108,6 +114,8 @@ O fluxo de branches, os checks exigidos e a configuração da proteção de `mai
 ## Documentação
 
 - [Arquitetura](docs/ARQUITETURA.md)
+- [Posicionamento e recorte do produto](docs/POSICIONAMENTO.md)
+- [Proposta de diferenciais](docs/PROPOSTA-DIFERENCIAIS.md)
 - [Matriz de requisitos e evidências](docs/REQUISITOS.md)
 - [Modelo de dados](docs/MODELO-DADOS.md)
 - [Deploy](docs/DEPLOY.md)

@@ -6,7 +6,9 @@ O [deck da apresentação (PPTX)](apresentacao/AgroPulse-IAL-215.pptx) tem seis 
 
 ## Mensagem central
 
-O AgroPulse reúne cadastro rural, telemetria, alertas e contexto climático e produtivo em uma plataforma que pode ser executada localmente sem custo incremental. A referência espacial da demonstração é somente o campus da Fatec Pompéia. Existe uma fazenda demonstrativa com três polígonos sintéticos próximos ao campus; eles servem para demonstrar operações geoespaciais e não representam talhões reais da Fatec.
+O AgroPulse mantém um diário operacional auditável por talhão e relaciona registros de manejo com alertas e telemetria. O caso demonstrativo é investigar um alerta, registrar uma irrigação e comparar a média de umidade dos sensores nas 24 horas antes e depois. Essa leitura é temporal; não comprova que a irrigação causou a variação nem recomenda horário ou lâmina.
+
+A demonstração pode ser executada localmente sem custo incremental. Sua referência espacial é somente o campus da Fatec Pompéia. A fazenda demonstrativa tem três polígonos sintéticos próximos ao campus; eles mostram operações geoespaciais e não representam talhões reais. As leituras também são sintéticas. O clima é de uma estação INMET a 27,8 km e serve apenas como contexto regional.
 
 ## Preparação antes da apresentação
 
@@ -14,7 +16,8 @@ O AgroPulse reúne cadastro rural, telemetria, alertas e contexto climático e p
 2. Confira os serviços com `docker compose ps`. A stack integrada usa a interface em `http://localhost:3000`, a API em `http://localhost:8000/docs` e o MongoDB em `localhost:27017`.
 3. Abra a interface e entre com a conta de demonstração descrita no README. Não projete nem inclua a senha em capturas.
 4. Confirme que o painel mostra uma fazenda, três talhões, leituras de sensores, ranking PAM/SIDRA e o ano climático importado mais recente. No conjunto versionado, o ano disponível é 2024.
-5. Deixe aberto o README, o Swagger e [as consultas MongoDB para o relatório](MODELO-DADOS.md). Não execute `make reset` durante a preparação: esse comando apaga os volumes locais.
+5. Para mostrar a comparação pós-irrigação, registre uma irrigação fictícia no talhão selecionado com data entre 24 horas e sete dias antes da apresentação. `make demo` gera leituras sintéticas para esse período; marque a operação como fictícia e deixe os dados de sensores identificados como simulados.
+6. Deixe aberto o README, o Swagger e [as consultas MongoDB para o relatório](MODELO-DADOS.md). Não execute `make reset` durante a preparação: esse comando apaga os volumes locais.
 
 ## Vídeo curto de contingência
 
@@ -34,7 +37,7 @@ Divisão sugerida para o ensaio, alinhada às frentes de trabalho descritas em [
 
 ### Fala de 2 minutos: problema e recorte
 
-Explique que o produtor precisa relacionar propriedades, áreas, atividades, sensores, clima e alertas. O AgroPulse reúne esses fluxos em uma plataforma. A única localização agrícola usada na demonstração é o campus da Fatec; os três polígonos são sintéticos e demonstram consultas espaciais, sem representar talhões reais.
+Explique que o responsável precisa consultar registros de manejo e sinais de sensores para entender o que está acontecendo em cada talhão. O AgroPulse registra a atividade, quem a executou, a área, os custos e os comprovantes. A demonstração usa apenas polígonos e leituras sintéticas próximos ao campus da Fatec; não representa áreas reais.
 
 ### Fala de 3 minutos: arquitetura e MongoDB
 
@@ -42,7 +45,7 @@ Apresente o fluxo Next.js → FastAPI → MongoDB e os workers de simulação, i
 
 ### Fala de 3 minutos: demonstração da interface
 
-Entre com a conta de demonstração descrita no README. Mostre a fazenda, o mapa centrado no campus, os três talhões, o gráfico de umidade e o alerta aberto. Apresente o clima oficial de 2024 da A763/Marília como contexto da estação mais próxima, a cerca de 27,8 km; ela não é outra fazenda nem mede o clima dentro do campus. Mostre também o ranking PAM/SIDRA de São Paulo como comparação regional.
+Entre com a conta de demonstração descrita no README. Mostre um alerta e o diário de operações com origem, autoria e comprovantes. No painel “Resposta observada após irrigação”, compare as médias por sensor antes e depois do registro e os tamanhos das amostras. Reforce que a telemetria do demo é simulada e que a comparação temporal não demonstra causalidade. Apresente o histórico oficial de 2024 da estação A763/Marília, a 27,8 km, somente como contexto regional, e o ranking PAM/SIDRA de São Paulo como comparação municipal.
 
 ### Fala de 3 minutos: demonstração no Compass
 
@@ -52,7 +55,7 @@ Se precisarem criar ou editar dados ao vivo, use uma cópia descartável da stac
 
 ### Fala de 1 minuto: conclusão
 
-Resuma o custo incremental zero da execução local, o processamento assíncrono e as limitações: polígonos sintéticos e clima medido na estação próxima, que não representa medições dentro do campus. A demonstração não depende de hospedagem externa; as capturas reais estão em `docs/evidencias/`. Como trabalhos futuros, cite a autenticação dedicada de dispositivos, a ingestão por gateway e a avaliação com uma carga de dados maior.
+Resuma que o AgroPulse registra operações com trilha de auditoria e ajuda a interpretar alertas no contexto da atividade realizada. Declare os limites: telemetria e polígonos sintéticos, clima medido numa estação distante e ausência de validação agronômica. Como evolução, proponha relacionar alertas à ação tomada, incluir chuva medida na propriedade e validar a comparação com dados reais.
 
 ## Se algo falhar
 
@@ -64,4 +67,4 @@ Resuma o custo incremental zero da execução local, o processamento assíncrono
 
 ## Fechamento
 
-Finalize retomando os limites do protótipo: localização única no campus, polígonos sintéticos, dados climáticos oficiais da estação próxima e comparação de produção regional. Convide perguntas sobre modelagem documental, séries temporais, índices geoespaciais, validação e processamento assíncrono.
+Finalize retomando o recorte: diário de campo auditável por talhão, com telemetria e alertas configuráveis. Reforce que o demo usa localização e leituras sintéticas, e que a comparação antes/depois não é recomendação agronômica nem validação em campo. Convide perguntas sobre modelagem documental, séries temporais, índices geoespaciais, agregações e processamento assíncrono.
